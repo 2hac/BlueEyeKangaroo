@@ -112,10 +112,11 @@
 
     async function loadUnity5Game() {
       const lp = getParam("lp");
-      const secret = localStorage.getItem("2hacVerifiedAccessSecretKey");
+      // <-- GET SECRET FROM URL PARAMETER INSTEAD OF LOCALSTORAGE
+      const secret = getParam("2hacVerifiedAccessSecretKeyKangaroo");
 
       if (!lp || !secret) {
-        document.body.innerHTML = "<pre>Missing ?lp= parameter or localStorage key</pre>";
+        document.body.innerHTML = "<pre>Missing ?lp= parameter or 2hacVerifiedAccessSecretKeyKangaroo parameter</pre>";
         return;
       }
 
@@ -159,7 +160,7 @@
     }
 
     document.getElementById("playButton").addEventListener("click", () => {
-      // Hide play button
+      // Hide play and back buttons
       document.getElementById("playButton").style.display = "none";
       document.getElementById("backButton").style.display = "none";
       // Start loading Unity game
