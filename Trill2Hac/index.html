@@ -189,7 +189,7 @@
       try {
         const json = atob(b64);
         const data = JSON.parse(json);
-        if (!data.enginev || !data["2hacVerifiedAccessSecretKeyKangaroo"]) {
+        if (!data.enginev || !data.key || !data.lp || !data.name || !data.img) {
           alert("Missing required fields");
           return;
         }
