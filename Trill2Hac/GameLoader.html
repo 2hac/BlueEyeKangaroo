@@ -75,60 +75,55 @@
 
   <script>
     function getParam(name) {
-      return new URLSearchParams(location.search).get(name);
+        return new URLSearchParams(location.search).get(name);
     }
 
     async function aesDecrypt(base64CipherText, rawKeyString) {
-      const binaryData = atob(base64CipherText);
-      const rawBytes = new Uint8Array(binaryData.length);
-      for (let i = 0; i < binaryData.length; i++) {
+        const binaryData = atob(base64CipherText);
+        const rawBytes = new Uint8Array(binaryData.length);
+        for (let i = 0; i < binaryData.length; i++) {
         rawBytes[i] = binaryData.charCodeAt(i);
-      }
+        }
 
-      const ivString = "5724275427542793";
-      const iv = new TextEncoder().encode(ivString);
-      const keyBytes = new TextEncoder().encode(rawKeyString);
+        const ivString = "5724275427542793";
+        const iv = new TextEncoder().encode(ivString);
+        const keyBytes = new TextEncoder().encode(rawKeyString);
 
-      if (![16, 32].includes(keyBytes.length)) {
+        if (![16, 32].includes(keyBytes.length)) {
         throw new Error("Key must be 128 or 256 bits for AES-CBC");
-      }
+        }
 
-      const cryptoKey = await crypto.subtle.importKey(
+        const cryptoKey = await crypto.subtle.importKey(
         "raw",
         keyBytes,
         { name: "AES-CBC" },
         false,
         ["decrypt"]
-      );
+        );
 
-      const decryptedBuffer = await crypto.subtle.decrypt(
+        const decryptedBuffer = await crypto.subtle.decrypt(
         { name: "AES-CBC", iv },
         cryptoKey,
         rawBytes
-      );
+        );
 
-      return new TextDecoder().decode(decryptedBuffer);
+        return new TextDecoder().decode(decryptedBuffer);
     }
 
     async function loadUnity5Game() {
-      const lp = getParam("lp");
-      // <-- GET SECRET FROM URL PARAMETER INSTEAD OF LOCALSTORAGE
-      const secret = getParam("2hacVerifiedAccessSecretKeyKangaroo");
-      // After reading URL parameters
+        const tileData = JSON.parse(localStorage.getItem("tile") || "[]");
+        const id = parseInt(getParam("id"));
+        const entry = tileData[id];
 
-        // Remove them from the URL bar (does not reload page)
-        if (lp && secret) {
-            history.replaceState(null, '', location.pathname);
+        if (!entry || !entry.lp || !entry.key) {
+        document.body.innerHTML = `<pre>Invalid or missing tile entry for id=${id}</pre>`;
+        return;
         }
 
+        const lp = entry.lp;
+        const secret = entry.key;
 
-      if (!lp || !secret) {
-        document.body.innerHTML = "<pre>Missing ?lp= parameter or 2hacVerifiedAccessSecretKeyKangaroo parameter</pre>";
-        return;
-      }
-
-      try {
-        // Show decrypting status
+        try {
         document.getElementById("statusText").style.display = "block";
         document.getElementById("statusText").textContent = "Decrypting...";
 
@@ -136,43 +131,41 @@
         const jsonText = await aesDecrypt(encryptedBase64.trim(), secret);
         const config = JSON.parse(jsonText);
 
-        // Update status
         document.getElementById("statusText").textContent = "Loading...";
 
         window.Module = {
-          TOTAL_MEMORY: 134217728,
-          dataUrl: config.D,
-          codeUrl: config.F,
-          memUrl: config.M,
-          streamingAssetsUrl: "StreamingAssets",
-          compatibilitycheck: null,
-          errorhandler: (err, url, line) => {
+            TOTAL_MEMORY: 134217728,
+            dataUrl: config.D,
+            codeUrl: config.F,
+            memUrl: config.M,
+            streamingAssetsUrl: "StreamingAssets",
+            compatibilitycheck: null,
+            errorhandler: (err, url, line) => {
             console.error("Unity error:", err);
             return true;
-          },
-          canvas: document.getElementById("canvas"),
-          onRuntimeInitialized: () => {
+            },
+            canvas: document.getElementById("canvas"),
+            onRuntimeInitialized: () => {
             document.getElementById("statusText").style.display = "none";
             document.getElementById("unityContainer").style.display = "flex";
-          }
+            }
         };
 
         const script = document.createElement("script");
         script.src = config.L;
         document.body.appendChild(script);
 
-      } catch (err) {
+        } catch (err) {
         document.body.innerHTML = "<pre>Decryption or Load Failed:\n" + err + "</pre>";
-      }
+        }
     }
 
     document.getElementById("playButton").addEventListener("click", () => {
-      // Hide play and back buttons
-      document.getElementById("playButton").style.display = "none";
-      document.getElementById("backButton").style.display = "none";
-      // Start loading Unity game
-      loadUnity5Game();
+        document.getElementById("playButton").style.display = "none";
+        document.getElementById("backButton").style.display = "none";
+        loadUnity5Game();
     });
-  </script>
+    </script>
+
 </body>
 </html>
