@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Square Grid Buttons with LocalStorage</title>
   <style>
     body {
@@ -9,10 +9,6 @@
       background-color: #1e1e1e;
       font-family: sans-serif;
       color: white;
-    }
-
-    .toolbar {
-      padding: 20px;
     }
 
     .grid {
@@ -24,18 +20,23 @@
     }
 
     .button-tile {
+      position: relative; /* for delete button positioning */
       background-color: #2e2e2e;
       border-radius: 10px;
       overflow: hidden;
       text-decoration: none;
-      color: #fff;
+      color: #00afff;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: space-between;
+      justify-content: center;
       width: 200px;
       height: 200px;
       transition: transform 0.2s, background-color 0.2s;
+      cursor: pointer;
+      user-select: none;
+      font-size: 17px;
+      font-weight: bold;
     }
 
     .button-tile:hover {
@@ -58,11 +59,42 @@
       padding: 0 5px;
       font-size: 0.85em;
       text-align: center;
+      color: white;
+      user-select: text;
+      font-weight: normal;
+    }
+
+    /* Delete button styles */
+    .delete-btn {
+      position: absolute;
+      top: 5px;
+      right: 5px;
+      background-color: rgba(255, 0, 0, 0.8);
+      border: none;
+      color: white;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      font-weight: bold;
+      font-size: 16px;
+      line-height: 20px;
+      cursor: pointer;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      user-select: none;
+      transition: background-color 0.3s;
+    }
+    .delete-btn:hover {
+      background-color: rgba(255, 0, 0, 1);
     }
 
     #add-ui {
       display: none;
       margin-top: 10px;
+      padding: 0 20px 20px 20px;
     }
 
     input[type="text"] {
@@ -81,12 +113,9 @@
 </head>
 <body>
 
-  <div class="toolbar">
-    <button onclick="toggleAddUI()">➕ Add</button>
-    <div id="add-ui">
-      <input type="text" id="b64input" placeholder="Paste Base64 here..." />
-      <button onclick="addFromBase64()">Submit</button>
-    </div>
+  <div id="add-ui">
+    <input type="text" id="b64input" placeholder="Paste Base64 here..." />
+    <button onclick="addFromBase64()">Submit</button>
   </div>
 
   <div class="grid" id="grid">
@@ -104,16 +133,53 @@
     function loadTiles() {
       const saved = JSON.parse(localStorage.getItem('tiles') || '[]');
       grid.innerHTML = '';
-      for (const tile of saved) {
+
+      saved.forEach((tile, index) => {
         const el = document.createElement('a');
         el.href = tile.link;
         el.className = 'button-tile';
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'delete-btn';
+        deleteBtn.textContent = '×';
+        deleteBtn.title = "Delete tile";
+
+        deleteBtn.addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          deleteTile(index);
+        });
+
         el.innerHTML = `
           <img src="${tile.img}" alt="${tile.name}">
           <p>${tile.name}</p>
         `;
+
+        el.appendChild(deleteBtn);
         grid.appendChild(el);
-      }
+      });
+
+      // Add the fixed Add Tile at the end
+      const addTile = document.createElement('div');
+      addTile.className = 'button-tile';
+      addTile.title = "Add new tile";
+      addTile.textContent = '+';
+      addTile.style.fontSize = '100px';
+      addTile.style.color = '#00afff';
+      addTile.style.userSelect = 'none';
+
+      addTile.addEventListener('click', () => {
+        toggleAddUI();
+      });
+
+      grid.appendChild(addTile);
+    }
+
+    function deleteTile(index) {
+      const saved = JSON.parse(localStorage.getItem('tiles') || '[]');
+      saved.splice(index, 1); // Remove only the tile at the given index
+      localStorage.setItem('tiles', JSON.stringify(saved));
+      loadTiles();
     }
 
     function addFromBase64() {
@@ -136,6 +202,9 @@
         alert("Invalid Base64 or JSON.");
       }
     }
+
+    // Initially hide the add UI
+    document.getElementById('add-ui').style.display = 'none';
 
     // Load on start
     loadTiles();
