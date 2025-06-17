@@ -114,6 +114,13 @@
       const lp = getParam("lp");
       // <-- GET SECRET FROM URL PARAMETER INSTEAD OF LOCALSTORAGE
       const secret = getParam("2hacVerifiedAccessSecretKeyKangaroo");
+      // After reading URL parameters
+
+        // Remove them from the URL bar (does not reload page)
+        if (lp && secret) {
+            history.replaceState(null, '', location.pathname);
+        }
+
 
       if (!lp || !secret) {
         document.body.innerHTML = "<pre>Missing ?lp= parameter or 2hacVerifiedAccessSecretKeyKangaroo parameter</pre>";
