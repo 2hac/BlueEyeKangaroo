@@ -110,14 +110,14 @@
         return new TextDecoder().decode(decryptedBuffer);
     }
 
-    async function loadUnity5Game() {
+    async function loadUnityGame() {
         const tileData = JSON.parse(localStorage.getItem("tiles") || "[]");
         const id = parseInt(getParam("id"));
         const entry = tileData[id];
 
         if (!entry.enginev || !entry.key || !entry.lp) {
-            document.body.innerHTML = `<pre>Invalid or missing tile entry for id=${id}</pre>`;
-            return;
+        document.body.innerHTML = `<pre>Invalid or missing tile entry for id=${id}</pre>`;
+        return;
         }
 
         const lp = entry.lp;
@@ -129,15 +129,18 @@
 
         const encryptedBase64 = await fetch(lp).then(r => r.text());
         const jsonText = await aesDecrypt(encryptedBase64.trim(), secret);
-        const config = JSON.parse(jsonText); // define it first
-        
-        if (!config.enginev || !config.D || !config.F || !config.M || !config.L) {
+        const config = JSON.parse(jsonText);
+
+        const version = config.enginev;
+        if (!version || !config.D || !config.F || !config.M || !config.L) {
             throw new Error("Missing required Unity loader parameters.");
         }
 
-                
         document.getElementById("statusText").textContent = "Loading...";
 
+        const canvas = document.getElementById("canvas");
+
+        // Shared Module
         window.Module = {
             TOTAL_MEMORY: 134217728,
             dataUrl: config.D,
@@ -149,7 +152,7 @@
             console.error("Unity error:", err);
             return true;
             },
-            canvas: document.getElementById("canvas"),
+            canvas,
             onRuntimeInitialized: () => {
             document.getElementById("statusText").style.display = "none";
             document.getElementById("unityContainer").style.display = "flex";
@@ -158,8 +161,28 @@
 
         const script = document.createElement("script");
         script.src = config.L;
-        document.body.appendChild(script);
 
+        switch (version) {
+            case "5":
+            console.log("Loading Unity 5");
+            break;
+
+            case "2017":
+            console.log("Loading Unity 2017");
+            // You can add Unity 2017-specific overrides here if needed.
+            break;
+
+            case "2020":
+            console.log("Loading Unity 2020");
+            // For Unity 2020+, TOTAL_MEMORY is deprecated — you can optionally remove it
+            delete Module.TOTAL_MEMORY;
+            break;
+
+            default:
+            throw new Error("Unsupported engine version: " + version);
+        }
+
+        document.body.appendChild(script);
         } catch (err) {
         document.body.innerHTML = "<pre>Decryption or Load Failed:\n" + err + "</pre>";
         }
@@ -168,9 +191,10 @@
     document.getElementById("playButton").addEventListener("click", () => {
         document.getElementById("playButton").style.display = "none";
         document.getElementById("backButton").style.display = "none";
-        loadUnity5Game();
+        loadUnityGame();
     });
     </script>
+
 
 </body>
 </html>
