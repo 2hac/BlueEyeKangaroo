@@ -1,1 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Square Grid Buttons with LocalStorage</title>
+  <style>
+    body {
+      margin: 0;
+      background-color: #1e1e1e;
+      font-family: sans-serif;
+      color: white;
+    }
 
+    .toolbar {
+      padding: 20px;
+    }
+
+    .grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      padding: 20px;
+      justify-content: flex-start;
+    }
+
+    .button-tile {
+      background-color: #2e2e2e;
+      border-radius: 10px;
+      overflow: hidden;
+      text-decoration: none;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      width: 200px;
+      height: 200px;
+      transition: transform 0.2s, background-color 0.2s;
+    }
+
+    .button-tile:hover {
+      background-color: #3a3a3a;
+      transform: scale(1.05);
+    }
+
+    .button-tile img {
+      width: 95%;
+      height: 80%;
+      object-fit: cover;
+      padding-top: 8px;
+      padding-left: 8px;
+      padding-right: 8px;
+      display: block;
+    }
+
+    .button-tile p {
+      margin: 5px 0;
+      padding: 0 5px;
+      font-size: 0.85em;
+      text-align: center;
+    }
+
+    #add-ui {
+      display: none;
+      margin-top: 10px;
+    }
+
+    input[type="text"] {
+      width: 300px;
+      padding: 8px;
+      font-size: 14px;
+    }
+
+    button {
+      padding: 6px 12px;
+      margin-left: 5px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="toolbar">
+    <button onclick="toggleAddUI()">➕ Add</button>
+    <div id="add-ui">
+      <input type="text" id="b64input" placeholder="Paste Base64 here..." />
+      <button onclick="addFromBase64()">Submit</button>
+    </div>
+  </div>
+
+  <div class="grid" id="grid">
+    <!-- Tiles loaded from localStorage -->
+  </div>
+
+  <script>
+    const grid = document.getElementById('grid');
+
+    function toggleAddUI() {
+      const ui = document.getElementById('add-ui');
+      ui.style.display = ui.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function loadTiles() {
+      const saved = JSON.parse(localStorage.getItem('tiles') || '[]');
+      grid.innerHTML = '';
+      for (const tile of saved) {
+        const el = document.createElement('a');
+        el.href = tile.link;
+        el.className = 'button-tile';
+        el.innerHTML = `
+          <img src="${tile.img}" alt="${tile.name}">
+          <p>${tile.name}</p>
+        `;
+        grid.appendChild(el);
+      }
+    }
+
+    function addFromBase64() {
+      const input = document.getElementById('b64input');
+      const b64 = input.value.trim();
+      try {
+        const json = atob(b64);
+        const data = JSON.parse(json);
+        if (!data.name || !data.img || !data.link) {
+          alert("Invalid data structure");
+          return;
+        }
+        const saved = JSON.parse(localStorage.getItem('tiles') || '[]');
+        saved.push(data);
+        localStorage.setItem('tiles', JSON.stringify(saved));
+        input.value = '';
+        loadTiles();
+        toggleAddUI();
+      } catch (e) {
+        alert("Invalid Base64 or JSON.");
+      }
+    }
+
+    // Load on start
+    loadTiles();
+  </script>
+
+</body>
+</html>
