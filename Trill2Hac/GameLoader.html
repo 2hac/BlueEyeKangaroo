@@ -111,13 +111,13 @@
     }
 
     async function loadUnity5Game() {
-        const tileData = JSON.parse(localStorage.getItem("tile") || "[]");
+        const tileData = JSON.parse(localStorage.getItem("tiles") || "[]");
         const id = parseInt(getParam("id"));
         const entry = tileData[id];
 
-        if (!entry || !entry.lp || !entry.key) {
-        document.body.innerHTML = `<pre>Invalid or missing tile entry for id=${id}</pre>`;
-        return;
+        if (!entry.enginev || !entry.key || !entry.lp) {
+            document.body.innerHTML = `<pre>Invalid or missing tile entry for id=${id}</pre>`;
+            return;
         }
 
         const lp = entry.lp;
@@ -129,8 +129,13 @@
 
         const encryptedBase64 = await fetch(lp).then(r => r.text());
         const jsonText = await aesDecrypt(encryptedBase64.trim(), secret);
-        const config = JSON.parse(jsonText);
+        const config = JSON.parse(jsonText); // define it first
+        
+        if (!config.enginev || !config.D || !config.F || !config.M || !config.L) {
+            throw new Error("Missing required Unity loader parameters.");
+        }
 
+                
         document.getElementById("statusText").textContent = "Loading...";
 
         window.Module = {
