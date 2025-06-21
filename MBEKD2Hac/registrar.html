@@ -82,14 +82,14 @@
     }
 
     async function decryptHTML() {
-      const keyHex = document.getElementById('keyInput').value.trim();
-      const ivHex = "5724275427542793";
-      const status = document.getElementById('status');
-      status.textContent = "Fetching encrypted HTML...";
+        const keyHex = document.getElementById('keyInput').value.trim();
+        const ivHex = "5724275427542793" + "0000000000000000"; // Must be 16 bytes (32 hex chars)
+        const status = document.getElementById('status');
+        status.textContent = "Fetching encrypted HTML...";
 
       try {
         // Validate inputs
-        if (keyHex.length !== 32 || ivHex.length !== 32) {
+        if (keyHex.length !== 32) {
           throw new Error("Key and IV must be 16-byte (32 hex chars) each.");
         }
 
