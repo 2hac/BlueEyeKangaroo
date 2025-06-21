@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Secure HTML Loader</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #12141a;
+      color: #c8fcbc;
+      margin: 0;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 400px;
+      margin: 60px auto;
+      background-color: #1c1f26;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(80, 250, 123, 0.2);
+    }
+
+    h2 {
+      text-align: center;
+      color: #50fa7b;
+      margin-bottom: 20px;
+    }
+
+    input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #50fa7b;
+      border-radius: 5px;
+      background-color: #12141a;
+      color: #c8fcbc;
+      margin-bottom: 15px;
+      box-sizing: border-box;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #8aff8a;
+    }
+
+    button {
+      width: 100%;
+      padding: 10px;
+      background-color: #1e3a2c;
+      color: #8aff8a;
+      border: 1px solid #50fa7b;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #2e513e;
+    }
+
+    #status {
+      margin-top: 15px;
+      text-align: center;
+      color: #ff6f6f;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Load Encrypted HTML</h2>
+    <input id="keyInput" placeholder="Enter AES Key (hex, 16 bytes)" />
+    <button onclick="decryptHTML()">Unlock and Load</button>
+    <div id="status"></div>
+  </div>
+
+  <script>
+    const TXT_URL = "https://2hac.github.io/BlueEyeKangaroo/MBEKD2Hac/selcetrace2121.txt"; // Must contain Base64 string
+
+    function hexToBytes(hex) {
+      return new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+    }
+
+    async function decryptHTML() {
+      const keyHex = document.getElementById('keyInput').value.trim();
+      const ivHex = "5724275427542793";
+      const status = document.getElementById('status');
+      status.textContent = "Fetching encrypted HTML...";
+
+      try {
+        // Validate inputs
+        if (keyHex.length !== 32 || ivHex.length !== 32) {
+          throw new Error("Key and IV must be 16-byte (32 hex chars) each.");
+        }
+
+        const keyBytes = hexToBytes(keyHex);
+        const ivBytes = hexToBytes(ivHex);
+
+        const key = await crypto.subtle.importKey(
+          "raw",
+          keyBytes,
+          { name: "AES-CBC" },
+          false,
+          ["decrypt"]
+        );
+
+        const response = await fetch(TXT_URL);
+        if (!response.ok) throw new Error("Failed to download the .txt file.");
+        const base64 = (await response.text()).trim();
+
+        const encryptedData = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+
+        const decryptedBuffer = await crypto.subtle.decrypt(
+          { name: "AES-CBC", iv: ivBytes },
+          key,
+          encryptedData
+        );
+
+        const html = new TextDecoder().decode(decryptedBuffer);
+        status.textContent = "Decryption successful!";
+        const newWin = window.open();
+        newWin.document.open();
+        newWin.document.write(html);
+        newWin.document.close();
+      } catch (err) {
+        status.textContent = "Error: " + err.message;
+      }
+    }
+  </script>
+</body>
+</html>
