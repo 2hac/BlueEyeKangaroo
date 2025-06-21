@@ -82,49 +82,49 @@
     }
 
     async function decryptHTML() {
-        const keyHex = document.getElementById('keyInput').value.trim();
-        const ivHex = "5724275427542793" + "0000000000000000"; // Must be 16 bytes (32 hex chars)
+        const rawKeyString = document.getElementById('keyInput').value.trim();
+        const ivString = "5724275427542793"; // 16 chars = 16 bytes
         const status = document.getElementById('status');
         status.textContent = "Fetching encrypted HTML...";
 
-      try {
-        // Validate inputs
-        if (keyHex.length !== 32) {
-          throw new Error("Key and IV must be 16-byte (32 hex chars) each.");
+        try {
+            const iv = new TextEncoder().encode(ivString);
+            const keyBytes = new TextEncoder().encode(rawKeyString);
+
+            if (![16, 32].includes(keyBytes.length)) {
+            throw new Error("Key must be 128 or 256 bits (16 or 32 chars).");
+            }
+
+            const cryptoKey = await crypto.subtle.importKey(
+            "raw",
+            keyBytes,
+            { name: "AES-CBC" },
+            false,
+            ["decrypt"]
+            );
+
+            const response = await fetch(TXT_URL);
+            if (!response.ok) throw new Error("Failed to download the .txt file.");
+            const base64 = (await response.text()).trim();
+
+            const rawBytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+
+            const decryptedBuffer = await crypto.subtle.decrypt(
+            { name: "AES-CBC", iv },
+            cryptoKey,
+            rawBytes
+            );
+
+            const decryptedHTML = new TextDecoder().decode(decryptedBuffer);
+            status.textContent = "Decryption successful!";
+            const newWin = window.open();
+            newWin.document.open();
+            newWin.document.write(decryptedHTML);
+            newWin.document.close();
+
+        } catch (err) {
+            status.textContent = "Error: " + err.message;
         }
-
-        const keyBytes = hexToBytes(keyHex);
-        const ivBytes = hexToBytes(ivHex);
-
-        const key = await crypto.subtle.importKey(
-          "raw",
-          keyBytes,
-          { name: "AES-CBC" },
-          false,
-          ["decrypt"]
-        );
-
-        const response = await fetch(TXT_URL);
-        if (!response.ok) throw new Error("Failed to download the .txt file.");
-        const base64 = (await response.text()).trim();
-
-        const encryptedData = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-
-        const decryptedBuffer = await crypto.subtle.decrypt(
-          { name: "AES-CBC", iv: ivBytes },
-          key,
-          encryptedData
-        );
-
-        const html = new TextDecoder().decode(decryptedBuffer);
-        status.textContent = "Decryption successful!";
-        const newWin = window.open();
-        newWin.document.open();
-        newWin.document.write(html);
-        newWin.document.close();
-      } catch (err) {
-        status.textContent = "Error: " + err.message;
-      }
     }
   </script>
 </body>
