@@ -75,7 +75,7 @@
   </div>
 
   <script>
-    const TXT_URL = "https://2hac.github.io/BlueEyeKangaroo/MBEKD2Hac/selcetrace2121.txt"; // Must contain Base64 string
+    const TXT_URL = "https://2hac.github.io/BlueEyeKangaroo/MBEKD2Hac/selcetrace2121.txt";
 
     function hexToBytes(hex) {
       return new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
@@ -88,46 +88,46 @@
       status.textContent = "Fetching encrypted HTML...";
 
       try {
-          const iv = new TextEncoder().encode(ivString);
-          const keyBytes = new TextEncoder().encode(rawKeyString);
+        const iv = new TextEncoder().encode(ivString);
+        const keyBytes = new TextEncoder().encode(rawKeyString);
 
-          if (![16, 32].includes(keyBytes.length)) {
-              throw new Error("Key must be 128 or 256 bits (16 or 32 chars).");
-          }
+        if (![16, 32].includes(keyBytes.length)) {
+          throw new Error("Key must be 128 or 256 bits (16 or 32 chars).");
+        }
 
-          const cryptoKey = await crypto.subtle.importKey(
-              "raw",
-              keyBytes,
-              { name: "AES-CBC" },
-              false,
-              ["decrypt"]
-          );
+        const cryptoKey = await crypto.subtle.importKey(
+          "raw",
+          keyBytes,
+          { name: "AES-CBC" },
+          false,
+          ["decrypt"]
+        );
 
-          const response = await fetch(TXT_URL);
-          if (!response.ok) throw new Error("Failed to download the .txt file.");
-          const base64 = (await response.text()).trim();
+        const response = await fetch(TXT_URL);
+        if (!response.ok) throw new Error("Failed to download the .txt file.");
+        const base64 = (await response.text()).trim();
 
-          const rawBytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+        const rawBytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
 
-          const decryptedBuffer = await crypto.subtle.decrypt(
-              { name: "AES-CBC", iv },
-              cryptoKey,
-              rawBytes
-          );
+        const decryptedBuffer = await crypto.subtle.decrypt(
+          { name: "AES-CBC", iv },
+          cryptoKey,
+          rawBytes
+        );
 
-          const decryptedHTML = new TextDecoder().decode(decryptedBuffer);
-          status.textContent = "Decryption successful!";
+        const decryptedHTML = new TextDecoder().decode(decryptedBuffer);
+        status.textContent = "Decryption successful!";
 
-          // Add key to about:blank?key=... and open
-          const newWin = window.open("about:blank?key=" + encodeURIComponent(rawKeyString), "_blank");
-          newWin.document.open();
-          newWin.document.write(decryptedHTML);
-          newWin.document.close();
+        // Replace the entire page with the decrypted HTML
+        document.open();
+        document.write(decryptedHTML);
+        document.close();
 
       } catch (err) {
-          status.textContent = "Error: " + err.message;
+        status.textContent = "Error: " + err.message;
       }
     }
+
   </script>
 </body>
 </html>
