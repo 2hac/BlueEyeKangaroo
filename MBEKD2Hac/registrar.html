@@ -69,36 +69,26 @@
 <body>
   <div class="container">
     <h2>High Dash Manager</h2>
-    <input id="keyInput" placeholder="Enter AES Key (hex, 16 bytes)" />
-    <button onclick="decryptHTML()">Enter</button>
+    <input id="keyInput" placeholder="Enter AES Key (16 or 32 characters)" />
+    <button onclick="manualDecrypt()">Enter</button>
     <div id="status"></div>
   </div>
 
   <script>
     const TXT_URL = "https://2hac.github.io/BlueEyeKangaroo/MBEKD2Hac/selcetrace2121.txt";
 
-    function hexToBytes(hex) {
-      return new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
-    }
-
-    async function decryptHTML() {
-      const rawKeyString = document.getElementById('keyInput').value.trim();
-      const ivString = "5724275427542793"; // 16 chars = 16 bytes
+    async function decryptHTML(aesKey) {
+      const ivString = "5724275427542793";
       const status = document.getElementById('status');
       status.textContent = "Fetching encrypted HTML...";
 
       try {
         const iv = new TextEncoder().encode(ivString);
-        const keyBytes = new TextEncoder().encode(rawKeyString);
+        const keyBytes = new TextEncoder().encode(aesKey);
 
         if (![16, 32].includes(keyBytes.length)) {
-          throw new Error("Key must be 128 or 256 bits (16 or 32 chars).");
+          throw new Error("Key must be 128 or 256 bits (16 or 32 characters).");
         }
-
-        // Update URL query string with ?key=KEY without reloading
-        const newUrl = new URL(window.location);
-        newUrl.searchParams.set('key', rawKeyString);
-        history.replaceState(null, '', newUrl.toString());
 
         const cryptoKey = await crypto.subtle.importKey(
           "raw",
@@ -122,7 +112,6 @@
 
         const decryptedHTML = new TextDecoder().decode(decryptedBuffer);
         status.textContent = "Decryption successful!";
-
         document.open();
         document.write(decryptedHTML);
         document.close();
@@ -132,7 +121,27 @@
       }
     }
 
+    function manualDecrypt() {
+      const rawKeyString = document.getElementById('keyInput').value.trim();
+      if (!rawKeyString) return;
 
+      // Update URL with key (without reload)
+      const newUrl = new URL(window.location);
+      newUrl.searchParams.set('key', rawKeyString);
+      history.replaceState(null, '', newUrl.toString());
+
+      decryptHTML(rawKeyString);
+    }
+
+    // Auto-decrypt if ?key= is in the URL
+    window.addEventListener('load', () => {
+      const params = new URLSearchParams(window.location.search);
+      const keyFromURL = params.get('key');
+      if (keyFromURL) {
+        document.getElementById('keyInput').value = keyFromURL;
+        decryptHTML(keyFromURL);
+      }
+    });
   </script>
 </body>
 </html>
