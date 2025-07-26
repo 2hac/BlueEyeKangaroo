@@ -95,6 +95,11 @@
           throw new Error("Key must be 128 or 256 bits (16 or 32 chars).");
         }
 
+        // Update URL query string with ?key=KEY without reloading
+        const newUrl = new URL(window.location);
+        newUrl.searchParams.set('key', rawKeyString);
+        history.replaceState(null, '', newUrl.toString());
+
         const cryptoKey = await crypto.subtle.importKey(
           "raw",
           keyBytes,
@@ -118,7 +123,6 @@
         const decryptedHTML = new TextDecoder().decode(decryptedBuffer);
         status.textContent = "Decryption successful!";
 
-        // Replace the entire page with the decrypted HTML
         document.open();
         document.write(decryptedHTML);
         document.close();
@@ -127,6 +131,7 @@
         status.textContent = "Error: " + err.message;
       }
     }
+
 
   </script>
 </body>
