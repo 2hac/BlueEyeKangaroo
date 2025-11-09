@@ -77,14 +77,15 @@
   <script>
     const TXT_URL = "https://2hac.github.io/BlueEyeKangaroo/MBEKD2Hac/selcetrace2121.txt";
 
-    async function decryptHTML(aesKey) {
+    async function decryptHTML(base64Key) {
       const ivString = "5724275427542793";
       const status = document.getElementById('status');
       status.textContent = "Fetching encrypted HTML...";
 
       try {
+        const decodedKey = atob(base64Key);
         const iv = new TextEncoder().encode(ivString);
-        const keyBytes = new TextEncoder().encode(aesKey);
+        const keyBytes = new TextEncoder().encode(decodedKey);
 
         if (![16, 32].includes(keyBytes.length)) {
           throw new Error("Key must be 128 or 256 bits (16 or 32 characters).");
