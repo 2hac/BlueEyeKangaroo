@@ -142,6 +142,7 @@
     // Config and defaults
     let ZIP_URL = null;                // <-- will be set from ?f=BASE64
     let PASSWORD = "12345";         // default; overwritten by input/localStorage when used
+    let vParam;         // default; overwritten by input/localStorage when used
     const TARGET_FETCH_URL = "parkour"; // partial match used to intercept resources (adjust as needed)
 
     // Helper: get query param f (base64)
@@ -172,7 +173,7 @@
     (function initParams() {
       const fParam = getQueryParam('f');
       const sParam = getQueryParam('s');
-      let vParam = getQueryParam('v');
+      const vParam = getQueryParam('v');
 
       if (fParam) {
         const decodedF = base64DecodeToString(fParam);
