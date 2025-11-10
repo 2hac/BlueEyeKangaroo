@@ -313,7 +313,7 @@
         // only intercept if resource string contains TARGET_FETCH_URL or if the filename is one of Unity build files
         const resourceStr = (typeof resource === "string") ? resource : (resource && resource.url) ? resource.url : '';
         const shouldIntercept = resourceStr.includes(TARGET_FETCH_URL) ||
-                                /Game\.data|Game\.framework\.js|Game\.wasm|\.loader\.js|\.framework\.js|\.wasm|\.data$/i.test(resourceStr);
+                                /Game|Game|Game\.data|Game\.framework\.js|Game\.wasm|\.loader\.js|\.framework\.js|\.wasm|\.data$/i.test(resourceStr);
 
         if (shouldIntercept && ZIP_URL) {
           console.log("[Interceptor] Serving from decrypted zip:", resourceStr);
