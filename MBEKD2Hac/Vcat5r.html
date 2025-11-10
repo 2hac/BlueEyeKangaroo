@@ -142,7 +142,7 @@
     // Config and defaults
     let ZIP_URL = null;                // <-- will be set from ?f=BASE64
     let PASSWORD = "12345";         // default; overwritten by input/localStorage when used
-    let vParam = null;         // default; overwritten by input/localStorage when used
+    let VERSION_NO = null;         // default; overwritten by input/localStorage when used
     const TARGET_FETCH_URL = "parkour"; // partial match used to intercept resources (adjust as needed)
 
     // Helper: get query param f (base64)
@@ -203,14 +203,14 @@
       if (vParam) {
         const decodedS = base64DecodeToString(vParam);
         if (decodedS) {
-          window.vParam = decodedS;
-          console.log("[Init] version URL from ?v:", vParam);
+          VERSION_NO = decodedS;
+          console.log("[Init] version URL from ?v:", VERSION_NO);
         } else {
           console.warn("[Init] Could not decode base64 param v");
         }
       } else {
         console.log("[Init] No ?v param found - using default '6'");
-        window.vParam = "6";
+        VERSION_NO = "6";
       }
     })();
 
@@ -489,7 +489,7 @@
         try {
           PASSWORD = savedPassword;
           try {
-            if (vParam === "5") await startLegacyUnityV5();
+            if (VERSION_NO === "5") await startLegacyUnityV5();
             else await startUnity6();
           } catch (err) {
             alert("Failed: " + err.message);
@@ -530,7 +530,7 @@
 
       try {
         try {
-          if (vParam === "5") await startLegacyUnityV5();
+          if (VERSION_NO === "5") await startLegacyUnityV5();
           else await startUnity6();
         } catch (err) {
           alert("Failed: " + err.message);
