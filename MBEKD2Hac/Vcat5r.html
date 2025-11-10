@@ -629,7 +629,7 @@
             onProgress: (inst, progress) => {
               const percent = Math.round(progress * 100);
               progressBarFull.style.width = `${percent}%`;
-              document.unityloadingtext.innerText = `${percent}%`;
+              // document.getElementById("unity-loading-text").innerText = `${percent}%`;
             }
           });
 
