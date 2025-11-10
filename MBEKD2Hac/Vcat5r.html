@@ -168,20 +168,37 @@
     }
 
     // On load: read ZIP URL from ?f=<base64>
-    (function initZipUrl() {
+    // On load: read ZIP URL and StreamingAssets URL from ?f and ?s
+    (function initParams() {
       const fParam = getQueryParam('f');
+      const sParam = getQueryParam('s');
+
       if (fParam) {
-        const decoded = base64DecodeToString(fParam);
-        if (decoded) {
-          ZIP_URL = decoded;
-          console.log("[Init] ZIP URL from ?f: ", ZIP_URL);
+        const decodedF = base64DecodeToString(fParam);
+        if (decodedF) {
+          ZIP_URL = decodedF;
+          console.log("[Init] ZIP URL from ?f:", ZIP_URL);
         } else {
           console.warn("[Init] Could not decode base64 param f");
         }
       } else {
         console.warn("[Init] No ?f param found - ZIP_URL must be set manually");
       }
+
+      if (sParam) {
+        const decodedS = base64DecodeToString(sParam);
+        if (decodedS) {
+          window.STREAMING_ASSETS_URL = decodedS;
+          console.log("[Init] StreamingAssets URL from ?s:", STREAMING_ASSETS_URL);
+        } else {
+          console.warn("[Init] Could not decode base64 param s");
+        }
+      } else {
+        console.log("[Init] No ?s param found - using default 'StreamingAssets'");
+        window.STREAMING_ASSETS_URL = "StreamingAssets";
+      }
     })();
+
 
     // Crypto helpers
     async function deriveKeyAndIV(password) {
@@ -387,7 +404,7 @@
         dataUrl,
         frameworkUrl,
         codeUrl,
-        streamingAssetsUrl: "StreamingAssets",
+        streamingAssetsUrl: window.STREAMING_ASSETS_URL || "StreamingAssets",
         companyName: "Unity",
         productName: "WebGL Player",
         productVersion: "1.0",
