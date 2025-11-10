@@ -172,6 +172,7 @@
     (function initParams() {
       const fParam = getQueryParam('f');
       const sParam = getQueryParam('s');
+      const vParam = getQueryParam('v');
 
       if (fParam) {
         const decodedF = base64DecodeToString(fParam);
@@ -375,7 +376,7 @@
     })();
 
     // Helper to create Unity instance by providing blob URLs for loader/framework/data/wasm
-    async function startUnity() {
+    async function startUnity6() {
       if (!ZIP_URL) throw new Error("ZIP_URL not provided. Add ?f=<base64-encoded-zip-url> to the URL.");
       // fetch & decrypt zip once, will populate cachedZip
       const zip = await fetchAndDecryptZipFromUrl(ZIP_URL, PASSWORD);
@@ -473,7 +474,13 @@
       if (savedPassword) {
         try {
           PASSWORD = savedPassword;
-          await startUnity();
+          try {
+            if (vParam === "5") await startLegacyUnityV5();
+            else await startUnity6();
+          } catch (err) {
+            alert("Failed: " + err.message);
+            console.error(err);
+          }
         } catch (e) {
           console.error("Error using the saved password:", e);
           validationtext.style.display = "none";
@@ -508,7 +515,13 @@
       PASSWORD = inputPassword;
 
       try {
-        await startUnity();
+        try {
+          if (vParam === "5") await startLegacyUnityV5();
+          else await startUnity6();
+        } catch (err) {
+          alert("Failed: " + err.message);
+          console.error(err);
+        }
         localStorage.setItem("S2HACReplayVerifiedKey", inputPassword);
         passwordContainer.style.display = "none";
       } catch (err) {
@@ -524,6 +537,58 @@
         passwordInput.focus();
       }
     });
+
+    // ------------- LEGACY UNITY (v5) LOADER -------------
+    async function startLegacyUnityV5() {
+      console.log("[Legacy Loader] Starting Unity v5");
+
+      const zip = await fetchAndDecryptZipFromUrl(ZIP_URL, PASSWORD);
+      cachedZip = zip;
+
+      const buildJsonFile = Object.keys(zip.files).find(k => k.endsWith(".json"));
+      const dataFile = Object.keys(zip.files).find(k => k.endsWith(".data") || k.endsWith(".data.unityweb"));
+      const wasmFile = Object.keys(zip.files).find(k => k.endsWith(".wasm"));
+      const loaderFile = Object.keys(zip.files).find(k => k.toLowerCase().includes("unityloader") && k.endsWith(".js"));
+
+      if (!buildJsonFile || !dataFile || !wasmFile || !loaderFile)
+        throw new Error("Missing Unity build files inside the ZIP.");
+
+      const buildJson = JSON.parse(await zip.file(buildJsonFile).async("text"));
+      const dataBlob = new Blob([await zip.file(dataFile).async("arraybuffer")], { type: "application/octet-stream" });
+      const wasmBlob = new Blob([await zip.file(wasmFile).async("arraybuffer")], { type: "application/wasm" });
+      const loaderBlob = new Blob([await zip.file(loaderFile).async("text")], { type: "application/javascript" });
+
+      const dataUrl = URL.createObjectURL(dataBlob);
+      const wasmUrl = URL.createObjectURL(wasmBlob);
+      const loaderUrl = URL.createObjectURL(loaderBlob);
+
+      buildJson.dataUrl = dataUrl;
+      buildJson.wasmCodeUrl = wasmUrl;
+      const patchedJsonUrl = URL.createObjectURL(new Blob([JSON.stringify(buildJson)], { type: "application/json" }));
+
+      playContainer.style.display = "none";
+      unityContainer.style.display = "block";
+      loadingBar.style.display = "block";
+
+      const script = document.createElement("script");
+      script.src = loaderUrl;
+      script.onload = () => {
+        if (typeof UnityLoader === "undefined") {
+          console.error("UnityLoader not found!");
+          return;
+        }
+        window.gameInstance = UnityLoader.instantiate("unity-container", patchedJsonUrl, {
+          onProgress: (inst, progress) => {
+            const percent = Math.round(progress * 100);
+            progressBarFull.style.width = `${percent}%`;
+            document.getElementById("unity-loading-text").innerText = `${percent}%`;
+          }
+        });
+      };
+      document.body.appendChild(script);
+    }
+
+    
 
   </script>
 </body>
