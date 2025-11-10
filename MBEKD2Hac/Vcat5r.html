@@ -142,7 +142,7 @@
     // Config and defaults
     let ZIP_URL = null;                // <-- will be set from ?f=BASE64
     let PASSWORD = "12345";         // default; overwritten by input/localStorage when used
-    let vParam;         // default; overwritten by input/localStorage when used
+    let vParam = null;         // default; overwritten by input/localStorage when used
     const TARGET_FETCH_URL = "parkour"; // partial match used to intercept resources (adjust as needed)
 
     // Helper: get query param f (base64)
@@ -198,6 +198,19 @@
       } else {
         console.log("[Init] No ?s param found - using default 'StreamingAssets'");
         window.STREAMING_ASSETS_URL = "StreamingAssets";
+      }
+
+      if (vParam) {
+        const decodedS = base64DecodeToString(vParam);
+        if (decodedS) {
+          window.vParam = decodedS;
+          console.log("[Init] version URL from ?v:", vParam);
+        } else {
+          console.warn("[Init] Could not decode base64 param v");
+        }
+      } else {
+        console.log("[Init] No ?v param found - using default '6'");
+        window.vParam = "6";
       }
     })();
 
