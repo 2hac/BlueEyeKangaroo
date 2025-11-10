@@ -556,51 +556,86 @@
     async function startLegacyUnityV5() {
       console.log("[Legacy Loader] Starting Unity v5");
 
-      const zip = await fetchAndDecryptZipFromUrl(ZIP_URL, PASSWORD);
-      cachedZip = zip;
+      try {
+        // 1️⃣ Fetch and decrypt the ZIP
+        const zip = await fetchAndDecryptZipFromUrl(ZIP_URL, PASSWORD);
+        cachedZip = zip;
 
-      const buildJsonFile = Object.keys(zip.files).find(k => k.endsWith(".json"));
-      const dataFile = Object.keys(zip.files).find(k => k.endsWith(".data") || k.endsWith(".data.unityweb"));
-      const wasmFile = Object.keys(zip.files).find(k => k.endsWith(".wasm"));
-      const loaderFile = Object.keys(zip.files).find(k => k.toLowerCase().includes("unityloader") && k.endsWith(".js"));
+        // 2️⃣ Find Unity build files
+        const buildJsonFile = Object.keys(zip.files).find(k => k.endsWith(".json"));
+        const dataFile = Object.keys(zip.files).find(k => k.endsWith(".data") || k.endsWith(".data.unityweb"));
+        const wasmFile = Object.keys(zip.files).find(k => k.endsWith(".wasm.code.unityweb") || k.endsWith(".code.unityweb"));
+        const frameworkFile = Object.keys(zip.files).find(k => k.endsWith(".wasm.framework.unityweb") || k.endsWith(".framework.unityweb"));
+        const loaderFile = Object.keys(zip.files).find(k => k.toLowerCase().includes("unityloader") && k.endsWith(".js"));
 
-      if (!buildJsonFile || !dataFile || !wasmFile || !loaderFile)
-        throw new Error("Missing Unity build files inside the ZIP.");
+        if (!buildJsonFile || !dataFile || !wasmFile || !frameworkFile || !loaderFile)
+          throw new Error("❌ Missing Unity build files inside the ZIP.");
 
-      const buildJson = JSON.parse(await zip.file(buildJsonFile).async("text"));
-      const dataBlob = new Blob([await zip.file(dataFile).async("arraybuffer")], { type: "application/octet-stream" });
-      const wasmBlob = new Blob([await zip.file(wasmFile).async("arraybuffer")], { type: "application/wasm" });
-      const loaderBlob = new Blob([await zip.file(loaderFile).async("text")], { type: "application/javascript" });
+        console.log("[Legacy Loader] Files found:", { buildJsonFile, dataFile, wasmFile, frameworkFile, loaderFile });
 
-      const dataUrl = URL.createObjectURL(dataBlob);
-      const wasmUrl = URL.createObjectURL(wasmBlob);
-      const loaderUrl = URL.createObjectURL(loaderBlob);
+        // 3️⃣ Load each file as Blobs
+        const dataBlob = new Blob([await zip.file(dataFile).async("arraybuffer")], { type: "application/octet-stream" });
+        const wasmBlob = new Blob([await zip.file(wasmFile).async("arraybuffer")], { type: "application/wasm" });
+        const frameworkBlob = new Blob([await zip.file(frameworkFile).async("arraybuffer")], { type: "application/octet-stream" });
+        const loaderBlob = new Blob([await zip.file(loaderFile).async("text")], { type: "application/javascript" });
 
-      buildJson.dataUrl = dataUrl;
-      buildJson.wasmCodeUrl = wasmUrl;
-      const patchedJsonUrl = URL.createObjectURL(new Blob([JSON.stringify(buildJson)], { type: "application/json" }));
+        // 4️⃣ Create Blob URLs
+        const dataUrl = URL.createObjectURL(dataBlob);
+        const wasmUrl = URL.createObjectURL(wasmBlob);
+        const frameworkUrl = URL.createObjectURL(frameworkBlob);
+        const loaderUrl = URL.createObjectURL(loaderBlob);
 
-      playContainer.style.display = "none";
-      unityContainer.style.display = "block";
-      loadingBar.style.display = "block";
+        // 5️⃣ Read and patch the build.json
+        const originalJson = JSON.parse(await zip.file(buildJsonFile).async("text"));
 
-      const script = document.createElement("script");
-      script.src = loaderUrl;
-      script.onload = () => {
-        if (typeof UnityLoader === "undefined") {
-          console.error("UnityLoader not found!");
-          return;
-        }
-        window.gameInstance = UnityLoader.instantiate("unity-container", patchedJsonUrl, {
-          onProgress: (inst, progress) => {
-            const percent = Math.round(progress * 100);
-            progressBarFull.style.width = `${percent}%`;
-            document.getElementById("unity-loading-text").innerText = `${percent}%`;
+        const patchedJson = {
+          ...originalJson,
+          dataUrl: dataUrl,
+          wasmCodeUrl: wasmUrl,
+          wasmFrameworkUrl: frameworkUrl
+        };
+
+        const patchedJsonUrl = URL.createObjectURL(
+          new Blob([JSON.stringify(patchedJson)], { type: "application/json" })
+        );
+
+        console.log("[Legacy Loader] Patched JSON created:", patchedJson);
+
+        // 6️⃣ Prepare UI
+        playContainer.style.display = "none";
+        unityContainer.style.display = "block";
+        loadingBar.style.display = "block";
+
+        // 7️⃣ Load UnityLoader.js dynamically
+        const script = document.createElement("script");
+        script.src = loaderUrl;
+        script.onload = () => {
+          console.log("[Legacy Loader] UnityLoader script loaded.");
+
+          if (typeof UnityLoader === "undefined") {
+            console.error("❌ UnityLoader not found in loader script!");
+            return;
           }
-        });
-      };
-      document.body.appendChild(script);
+
+          // 8️⃣ Instantiate Unity player
+          window.gameInstance = UnityLoader.instantiate("unity-container", patchedJsonUrl, {
+            onProgress: (inst, progress) => {
+              const percent = Math.round(progress * 100);
+              progressBarFull.style.width = `${percent}%`;
+              document.getElementById("unity-loading-text").innerText = `${percent}%`;
+            }
+          });
+
+          console.log("[Legacy Loader] Unity instance started.");
+        };
+
+        document.body.appendChild(script);
+      } catch (err) {
+        console.error("[Legacy Loader] Error:", err);
+        alert("Failed to load Unity v5 build.\n\n" + err.message);
+      }
     }
+
 
     
 
