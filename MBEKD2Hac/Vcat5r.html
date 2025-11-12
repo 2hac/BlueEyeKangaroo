@@ -39,7 +39,7 @@
     #unity-container {
       width: 100%;
       height: 100%;
-      display: none;
+      display: flex;
     }
 
     #unity-canvas {
@@ -120,11 +120,34 @@
       <div id="unity-webgl-logo"></div>
       <div id="unity-fullscreen-button" style="cursor:pointer;">[Fullscreen]</div>
       <div id="unity-build-title">WebGL Player</div>
+      
+      <button id="qa-toggle-btn" style="cursor:pointer;">
+        QA: OFF
+      </button>
     </div>
   </div>
 
   <!-- extern libs -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  
+  <script>
+    const qaBtn = document.getElementById("qa-toggle-btn");
+
+    function updateQaButton() {
+      const isOn = localStorage.getItem("QaModeOveride") === "true";
+      qaBtn.textContent = `QA: ${isOn ? "ON" : "OFF"}`;
+      qaBtn.style.background = isOn ? "#2ecc7144" : "#44444444";
+    }
+
+    qaBtn.addEventListener("click", () => {
+      const current = localStorage.getItem("QaModeOveride") === "true";
+      localStorage.setItem("QaModeOveride", (!current).toString());
+      updateQaButton();
+    });
+
+    updateQaButton();
+  </script>
 
   <script>
     // UI elements
