@@ -467,7 +467,7 @@
           const prevExt = parts.pop().toLowerCase();
           switch (prevExt) {
             case "js": return "application/javascript; charset=utf-8";
-            case "wasm": return "application/brotli";
+            case "wasm": return "binary/octet-stream";
             case "data":
             case "unityweb": return "application/octet-stream";
             case "json": return "application/json";
@@ -485,12 +485,13 @@
           case "jpg":
           case "jpeg": return "image/jpeg";
           case "unityweb": return "application/octet-stream";
-          case "br": return "application/brotli";
+          case "br": return "binary/octet-stream";
           default: return "application/octet-stream";
         }
       }
 
       // Helper to make Blob URLs with proper MIME
+      // Helper to make Blob URLs with proper MIME and Brotli support
       async function getBlobURLFromZip(zip, possibleNames) {
         const fileName = findZipFile(zip, possibleNames);
         if (!fileName) throw new Error(`File not found: ${possibleNames.join(" or ")}`);
@@ -500,9 +501,27 @@
         const isText = /\.(js|json|html|txt)$/i.test(fileName);
         const data = await file.async(isText ? "text" : "arraybuffer");
 
+        // Check if it's Brotli-compressed
+        const isBrotli = fileName.endsWith(".br");
+
+        // Create the blob with correct MIME
         const blob = new Blob([data], { type: mime });
-        return URL.createObjectURL(blob);
+
+        // Create a Response with the proper Content-Encoding
+        const response = new Response(blob, {
+          headers: isBrotli
+            ? {
+                "Content-Type": mime,
+                "Content-Encoding": "br",
+              }
+            : { "Content-Type": mime },
+        });
+
+        // Convert the Response into a blob URL
+        const responseBlob = await response.blob();
+        return URL.createObjectURL(responseBlob);
       }
+
 
       // Build blob URLs (handles .br)
       const dataUrl = await getBlobURLFromZip(zip, expected.data);
