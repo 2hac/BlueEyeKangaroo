@@ -427,10 +427,10 @@
 
       // filenames that we expect inside zip - adjust names if they vary
       const expected = {
-        data: "Game.data",
-        framework: "Game.framework.js",
-        code: "Game.wasm",
-        loader: "Game.loader.js"
+        data: "Game.data || *.br",
+        framework: "Game.framework.js || *.br",
+        code: "Game.wasm || *.br",
+        loader: "Game.loader.js || *.br"
       };
 
       // Build blob URLs
