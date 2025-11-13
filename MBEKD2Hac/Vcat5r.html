@@ -332,7 +332,7 @@
         case 'jpg':
         case 'jpeg': return 'image/jpeg';
         case 'unityweb': return 'application/octet-stream';
-        case 'br': return 'application/octet-stream'; // fallback if no inner ext
+        case 'br': return 'application/brotli'; // fallback if no inner ext
         default: return 'application/octet-stream';
       }
     }
