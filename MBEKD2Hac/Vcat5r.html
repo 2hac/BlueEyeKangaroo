@@ -306,20 +306,37 @@
 
     // utility: content-type from filename ext
     function contentTypeFromFilename(name) {
-      const ext = name.split('.').pop().toLowerCase();
+      const parts = name.split('.');
+      let ext = parts.pop().toLowerCase();
+
+      // Handle .br compressed files (e.g., Game.data.br, Game.wasm.br)
+      if (ext === 'br' && parts.length > 1) {
+        const prevExt = parts.pop().toLowerCase();
+        switch (prevExt) {
+          case 'js': return 'application/javascript; charset=utf-8';
+          case 'wasm': return 'application/wasm';
+          case 'data': return 'application/octet-stream';
+          case 'json': return 'application/json';
+          case 'unityweb': return 'application/octet-stream';
+          default: return 'application/octet-stream';
+        }
+      }
+
       switch (ext) {
-        case 'js': return 'application/javascript';
+        case 'js': return 'application/javascript; charset=utf-8';
         case 'wasm': return 'application/wasm';
         case 'data': return 'application/octet-stream';
         case 'json': return 'application/json';
-        case 'html': return 'text/html';
+        case 'html': return 'text/html; charset=utf-8';
         case 'png': return 'image/png';
         case 'jpg':
         case 'jpeg': return 'image/jpeg';
         case 'unityweb': return 'application/octet-stream';
+        case 'br': return 'application/octet-stream'; // fallback if no inner ext
         default: return 'application/octet-stream';
       }
     }
+
 
     // Extract filename from a URL-ish string
     function filenameFromResource(resource) {
