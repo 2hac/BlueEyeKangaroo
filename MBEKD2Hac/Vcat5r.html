@@ -426,18 +426,25 @@
       loadingBar.style.display = "block";
 
       // filenames that we expect inside zip - adjust names if they vary
-      const expected = {
-        data: "Game.data || *.br",
-        framework: "Game.framework.js || *.br",
-        code: "Game.wasm || *.br",
-        loader: "Game.loader.js || *.br"
-      };
+       // helper: find file by base name or .br
+      async function findFile(zip, baseName) {
+        const names = Object.keys(zip.files);
+        const match = names.find(
+          n =>
+            n.endsWith(baseName) ||
+            n.endsWith(baseName + ".br") ||
+            n.includes(baseName + ".br") ||
+            n.includes(baseName)
+        );
+        if (!match) throw new Error(`Could not find ${baseName} in zip`);
+        return getBlobURLFromZip(zip, match);
+      }
 
-      // Build blob URLs
-      const dataUrl = await getBlobURLFromZip(zip, expected.data);
-      const frameworkUrl = await getBlobURLFromZip(zip, expected.framework);
-      const codeUrl = await getBlobURLFromZip(zip, expected.code);
-      const loaderUrl = await getBlobURLFromZip(zip, expected.loader);
+      // resolve all needed URLs (supporting both normal and .br)
+      const dataUrl = await findFile(zip, "Game.data");
+      const frameworkUrl = await findFile(zip, "Game.framework.js");
+      const codeUrl = await findFile(zip, "Game.wasm");
+      const loaderUrl = await findFile(zip, "Game.loader.js");
 
       const config = {
         dataUrl,
