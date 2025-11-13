@@ -280,29 +280,51 @@
     // Fetch & decrypt zip (returns JSZip instance)
     async function fetchAndDecryptZipFromUrl(zipUrl, password) {
       if (!zipUrl) throw new Error("ZIP URL not set");
+
       const resp = await fetch(zipUrl);
       if (!resp.ok) throw new Error("Failed to fetch zip: " + resp.status);
-      const encryptedBuffer = await resp.arrayBuffer();
-      const view = new Uint8Array(encryptedBuffer);
 
-      // If the file already begins with PK (0x50 0x4B), treat as plain zip
+      let encryptedBuffer = await resp.arrayBuffer();
+      let view = new Uint8Array(encryptedBuffer);
+
+      // If file begins with PK -> plain ZIP
       if (view[0] === 0x50 && view[1] === 0x4B) {
         console.log("File looks like a plain ZIP, no decryption needed.");
-        return await JSZip.loadAsync(encryptedBuffer);
+
+        // free memory
+        view = null;
+        const plain = encryptedBuffer;
+        encryptedBuffer = null;
+        await new Promise(r => setTimeout(r, 0));
+
+        return await JSZip.loadAsync(plain);
       }
 
-      // otherwise derive key/iv and decrypt the whole buffer using AES-CBC
+      // Derive key/iv
       const { key: rawKey, iv } = await deriveKeyAndIV(password);
       const cryptoKey = await importAESKey(rawKey);
-      // note: crypto.subtle.decrypt expects ArrayBuffer
+
+      let decryptedBuffer;
+
       try {
-        const decryptedBuffer = await crypto.subtle.decrypt({ name: "AES-CBC", iv }, cryptoKey, encryptedBuffer);
-        return await JSZip.loadAsync(new Uint8Array(decryptedBuffer));
+        decryptedBuffer = await crypto.subtle.decrypt(
+          { name: "AES-CBC", iv },
+          cryptoKey,
+          encryptedBuffer
+        );
       } catch (err) {
         console.error("Decrypt failed:", err);
         throw err;
+      } finally {
+        // ✨ MEMORY CLEANUP ✨
+        view = null;
+        encryptedBuffer = null;
+        await new Promise(r => setTimeout(r, 0)); // allow GC sweep
       }
+
+      return await JSZip.loadAsync(new Uint8Array(decryptedBuffer));
     }
+
 
     // utility: content-type from filename ext
     function contentTypeFromFilename(name) {
