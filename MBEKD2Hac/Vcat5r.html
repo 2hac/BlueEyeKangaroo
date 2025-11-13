@@ -306,37 +306,20 @@
 
     // utility: content-type from filename ext
     function contentTypeFromFilename(name) {
-      const parts = name.split('.');
-      let ext = parts.pop().toLowerCase();
-
-      // Handle .br compressed files (e.g., Game.data.br, Game.wasm.br)
-      if (ext === 'br' && parts.length > 1) {
-        const prevExt = parts.pop().toLowerCase();
-        switch (prevExt) {
-          case 'js': return 'application/javascript; charset=utf-8';
-          case 'wasm': return 'application/wasm';
-          case 'data': return 'application/octet-stream';
-          case 'json': return 'application/json';
-          case 'unityweb': return 'application/octet-stream';
-          default: return 'application/octet-stream';
-        }
-      }
-
+      const ext = name.split('.').pop().toLowerCase();
       switch (ext) {
-        case 'js': return 'application/javascript; charset=utf-8';
+        case 'js': return 'application/javascript';
         case 'wasm': return 'application/wasm';
         case 'data': return 'application/octet-stream';
         case 'json': return 'application/json';
-        case 'html': return 'text/html; charset=utf-8';
+        case 'html': return 'text/html';
         case 'png': return 'image/png';
         case 'jpg':
         case 'jpeg': return 'image/jpeg';
         case 'unityweb': return 'application/octet-stream';
-        case 'br': return 'application/brotli'; // fallback if no inner ext
         default: return 'application/octet-stream';
       }
     }
-
 
     // Extract filename from a URL-ish string
     function filenameFromResource(resource) {
@@ -432,9 +415,7 @@
 
     // Helper to create Unity instance by providing blob URLs for loader/framework/data/wasm
     async function startUnity6() {
-      if (!ZIP_URL)
-        throw new Error("ZIP_URL not provided. Add ?f=<base64-encoded-zip-url> to the URL.");
-
+      if (!ZIP_URL) throw new Error("ZIP_URL not provided. Add ?f=<base64-encoded-zip-url> to the URL.");
       // fetch & decrypt zip once, will populate cachedZip
       const zip = await fetchAndDecryptZipFromUrl(ZIP_URL, PASSWORD);
       cachedZip = zip; // cache it
@@ -444,86 +425,15 @@
       unityContainer.style.display = "block";
       loadingBar.style.display = "block";
 
-      // Expected filenames (support both plain + .br)
+      // filenames that we expect inside zip - adjust names if they vary
       const expected = {
-        data: ["Game.data", "Game.data.br"],
-        framework: ["Game.framework.js", "Game.framework.js.br"],
-        code: ["Game.wasm", "Game.wasm.br"],
-        loader: ["Game.loader.js", "Game.loader.js.br"],
+        data: "Game.data",
+        framework: "Game.framework.js",
+        code: "Game.wasm",
+        loader: "Game.loader.js"
       };
 
-      // Helper to find first matching file (handles .br)
-      function findZipFile(zip, possibleNames) {
-        const files = Object.keys(zip.files);
-        return files.find(f => possibleNames.some(pn => f.endsWith(pn))) || null;
-      }
-
-      // Helper: content type detector with Brotli awareness
-      function contentTypeFromFilename(name) {
-        const parts = name.split(".");
-        let ext = parts.pop().toLowerCase();
-
-        if (ext === "br" && parts.length > 1) {
-          const prevExt = parts.pop().toLowerCase();
-          switch (prevExt) {
-            case "js": return "application/javascript; charset=utf-8";
-            case "wasm": return "binary/octet-stream";
-            case "data":
-            case "unityweb": return "application/octet-stream";
-            case "json": return "application/json";
-            default: return "application/octet-stream";
-          }
-        }
-
-        switch (ext) {
-          case "js": return "application/javascript; charset=utf-8";
-          case "wasm": return "application/wasm";
-          case "data": return "application/octet-stream";
-          case "json": return "application/json";
-          case "html": return "text/html; charset=utf-8";
-          case "png": return "image/png";
-          case "jpg":
-          case "jpeg": return "image/jpeg";
-          case "unityweb": return "application/octet-stream";
-          case "br": return "binary/octet-stream";
-          default: return "application/octet-stream";
-        }
-      }
-
-      // Helper to make Blob URLs with proper MIME
-      // Helper to make Blob URLs with proper MIME and Brotli support
-      async function getBlobURLFromZip(zip, possibleNames) {
-        const fileName = findZipFile(zip, possibleNames);
-        if (!fileName) throw new Error(`File not found: ${possibleNames.join(" or ")}`);
-
-        const file = zip.file(fileName);
-        const mime = contentTypeFromFilename(fileName);
-        const isText = /\.(js|json|html|txt)$/i.test(fileName);
-        const data = await file.async(isText ? "text" : "arraybuffer");
-
-        // Check if it's Brotli-compressed
-        const isBrotli = fileName.endsWith(".br");
-
-        // Create the blob with correct MIME
-        const blob = new Blob([data], { type: mime });
-
-        // Create a Response with the proper Content-Encoding
-        const response = new Response(blob, {
-          headers: isBrotli
-            ? {
-                "Content-Type": mime,
-                "Content-Encoding": "br",
-              }
-            : { "Content-Type": mime },
-        });
-
-        // Convert the Response into a blob URL
-        const responseBlob = await response.blob();
-        return URL.createObjectURL(responseBlob);
-      }
-
-
-      // Build blob URLs (handles .br)
+      // Build blob URLs
       const dataUrl = await getBlobURLFromZip(zip, expected.data);
       const frameworkUrl = await getBlobURLFromZip(zip, expected.framework);
       const codeUrl = await getBlobURLFromZip(zip, expected.code);
@@ -540,16 +450,36 @@
         showBanner: (msg, type) => console.log(type, msg),
       };
 
-      console.log("Unity 6 files loaded with correct MIME types:");
-      console.table({ dataUrl, frameworkUrl, codeUrl, loaderUrl });
-
-      // Continue with Unity loader
+      // load loader script from blob and start unity
       const loaderScript = document.createElement("script");
       loaderScript.src = loaderUrl;
-      loaderScript.onload = () => createUnityInstance(unityContainer, config);
+      loaderScript.onload = () => {
+        // createUnityInstance provided by loader script
+        try {
+          createUnityInstance(canvas, config, (progress) => {
+            const percent = Math.round(progress * 100);
+            progressBarFull.style.width = `${percent}%`;
+            document.getElementById("unity-loading-text").innerText = `${percent}%`;
+          }).then((unityInstance) => {
+            loadingBar.style.display = "none";
+            document.getElementById("unity-fullscreen-button").onclick = () => {
+              try { unityInstance.SetFullscreen(1); } catch(e) { console.warn("Fullscreen call failed", e); }
+            };
+          }).catch((err) => {
+            loadingBar.style.display = "none";
+            alert("Unity error: " + err);
+          });
+        } catch (err) {
+          loadingBar.style.display = "none";
+          console.error("createUnityInstance failed to run:", err);
+        }
+      };
+      loaderScript.onerror = (e) => {
+        console.error("Loader script failed to load:", e);
+        alert("Loader script failed to load. Check console.");
+      };
       document.body.appendChild(loaderScript);
     }
-
 
     // helper: produce blob URL from zip by filename
     async function getBlobURLFromZip(zip, filename) {
