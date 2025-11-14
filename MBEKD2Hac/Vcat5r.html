@@ -306,6 +306,9 @@
 
           streamedZipFiles.set(filename, full); // replace array-of-chunks with final data
           console.log("[StreamZip] Finished file:", filename, "size:", full.length);
+          console.log("Files in decrypted ZIP:");
+          const fileNames = Object.keys(streamZip.files); // lists all files
+          console.log(fileNames);
         }
       });
 
