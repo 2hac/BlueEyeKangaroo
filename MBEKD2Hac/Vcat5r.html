@@ -596,7 +596,9 @@
 
       // Determine filename requested
       const filename = filenameFromResource(resource);
-
+      console.log("Files in decrypted ZIP:");
+      const fileNames = Object.keys(streamZip.files); // lists all files
+      console.log(fileNames);
       // If the Unity loader expects different names, you might need to map them here
       const file = cachedZip.file(filename);
       if (!file) {
@@ -671,6 +673,7 @@
     // Helper to create Unity instance by providing blob URLs for loader/framework/data/wasm
     async function startUnity6() {
         if (!ZIP_URL) throw new Error("ZIP_URL not provided. Add ?f=<base64-zip-url> to the URL.");
+          
 
         // hide play UI and show unity container
         playContainer.style.display = "none";
@@ -778,11 +781,11 @@
 
         try {
             if (VERSION_NO === "5") await startLegacyUnityV5();
-            if (USE_STREAM_ZIP) {
+            /* if (USE_STREAM_ZIP) {
                 validationtext.innerText = "Streaming ZIP...";
                 await preloadStreamZip(); // <-- stream + decrypt + unzip into streamedZipFiles
                 console.log("[StreamZip] Ready for Unity fetch interception.");
-            }
+            } */
             await startUnity6(); // <-- now uses streamed files
             localStorage.setItem("S2HACReplayVerifiedKey", PASSWORD);
             passwordContainer.style.display = "none";
