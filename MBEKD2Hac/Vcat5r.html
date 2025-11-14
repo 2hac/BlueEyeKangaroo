@@ -284,6 +284,47 @@
         });
     }
 
+    // IndexedDB wrapper
+    const DB_STORE = "files";
+
+    function openDB() {
+        if (!dbPromise) {
+            dbPromise = new Promise((resolve, reject) => {
+                const req = indexedDB.open(DB_NAME, 1);
+                req.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(DB_STORE)) {
+                        db.createObjectStore(DB_STORE);
+                    }
+                };
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        }
+        return dbPromise;
+    }
+
+    async function dbSet(key, value) {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(DB_STORE, "readwrite");
+            tx.objectStore(DB_STORE).put(value, key);
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+
+    async function dbGet(key) {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(DB_STORE, "readonly");
+            const req = tx.objectStore(DB_STORE).get(key);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+
 
     // On load: read ZIP URL from ?f=<base64>
     // On load: read ZIP URL and StreamingAssets URL from ?f and ?s
@@ -398,52 +439,39 @@
     }
 
 
-    async function loadZipWithCache(zipUrl, password) {
-        if (!CACHE_ID) {
-            // No caching used
-            return await fetchAndDecryptZipFromUrl(zipUrl, password);
+    async function loadZipWithCache(zipUrl, version) {
+        const CACHE_KEY = "unityFiles_" + version;
+
+        let cached = await dbGet(CACHE_KEY);
+        if (cached) {
+            console.log("[DB Cache] Loaded decrypted files from DB.");
+            return cached; // { "file1": Uint8Array, ... }
         }
 
-        const stored = localStorage.getItem(CACHE_KEY);
+        console.log("[DB Cache] No cache found. Downloading ZIP...");
 
-        if (stored) {
-            console.log("[Cache] Found cached entry:", stored);
+        const zipResp = await fetch(zipUrl);
+        const zipBuf = await zipResp.arrayBuffer();
+        const zip = await JSZip.loadAsync(zipBuf);
 
-            try {
-                const parsed = JSON.parse(stored);
+        console.log("[DB Cache] ZIP downloaded. Decrypting...");
 
-                // version match → use cached version
-                if (parsed.version === CACHE_VERSION) {
-                    console.log("[Cache] Version matches. Loading zip from cache!");
+        const output = {};
 
-                    const rawData = Uint8Array.from(parsed.data);
-                    return await JSZip.loadAsync(rawData);
-                } else {
-                    console.log("[Cache] Version mismatch. Need to download new version.");
-                }
-            } catch (e) {
-                console.warn("[Cache] Failed to parse cache. Rebuilding cache.");
+        // Decrypt every file
+        for (const name of Object.keys(zip.files)) {
+            const file = zip.files[name];
+            if (!file.dir) {
+                const raw = await file.async("uint8array");
+                const dec = await decryptStream(raw); // <--- your decrypt function
+                output[name] = dec;
             }
-        } else {
-            console.log("[Cache] No existing cache, downloading fresh zip.");
         }
 
-        // download/decrypt fresh
-        const freshZip = await fetchAndDecryptZipFromUrl(zipUrl, password);
+        console.log("[DB Cache] Storing decrypted files in IndexedDB...");
+        await dbSet(CACHE_KEY, output);
 
-        // save to cache
-        const zipFile = freshZip.files[Object.keys(freshZip.files)[0]];
-        const binary = await zipFile.async("uint8array"); // full zip
-
-        const cachePayload = {
-            version: CACHE_VERSION,
-            data: Array.from(binary),
-        };
-
-        localStorage.setItem(CACHE_KEY, JSON.stringify(cachePayload));
-        console.log("[Cache] Cache updated:", CACHE_KEY);
-
-        return freshZip;
+        return output;
     }
 
 
