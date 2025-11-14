@@ -670,71 +670,81 @@
 
     // Helper to create Unity instance by providing blob URLs for loader/framework/data/wasm
     async function startUnity6() {
-      if (!ZIP_URL) throw new Error("ZIP_URL not provided. Add ?f=<base64-encoded-zip-url> to the URL.");
-      // fetch & decrypt zip once, will populate cachedZip
-      const zip = await fetchAndDecryptZipFromUrl(ZIP_URL, PASSWORD);
-      cachedZip = zip; // cache it
+        if (!ZIP_URL) throw new Error("ZIP_URL not provided. Add ?f=<base64-zip-url> to the URL.");
 
-      // hide play UI and show unity container
-      playContainer.style.display = "none";
-      unityContainer.style.display = "block";
-      loadingBar.style.display = "block";
+        // hide play UI and show unity container
+        playContainer.style.display = "none";
+        unityContainer.style.display = "block";
+        loadingBar.style.display = "block";
 
-      // filenames that we expect inside zip - adjust names if they vary
-      const expected = {
-        data: "Game.data",
-        framework: "Game.framework.js",
-        code: "Game.wasm",
-        loader: "Game.loader.js"
-      };
-
-      // Build blob URLs
-      const dataUrl = await getBlobURLFromZip(zip, expected.data);
-      const frameworkUrl = await getBlobURLFromZip(zip, expected.framework);
-      const codeUrl = await getBlobURLFromZip(zip, expected.code);
-      const loaderUrl = await getBlobURLFromZip(zip, expected.loader);
-
-      const config = {
-        dataUrl,
-        frameworkUrl,
-        codeUrl,
-        streamingAssetsUrl: window.STREAMING_ASSETS_URL || "StreamingAssets",
-        companyName: "Unity",
-        productName: "WebGL Player",
-        productVersion: "1.0",
-        showBanner: (msg, type) => console.log(type, msg),
-      };
-
-      // load loader script from blob and start unity
-      const loaderScript = document.createElement("script");
-      loaderScript.src = loaderUrl;
-      loaderScript.onload = () => {
-        // createUnityInstance provided by loader script
-        try {
-          createUnityInstance(canvas, config, (progress) => {
-            const percent = Math.round(progress * 100);
-            progressBarFull.style.width = `${percent}%`;
-            document.getElementById("unity-loading-text").innerText = `${percent}%`;
-          }).then((unityInstance) => {
-            loadingBar.style.display = "none";
-            document.getElementById("unity-fullscreen-button").onclick = () => {
-              try { unityInstance.SetFullscreen(1); } catch(e) { console.warn("Fullscreen call failed", e); }
-            };
-          }).catch((err) => {
-            loadingBar.style.display = "none";
-            alert("Unity error: " + err);
-          });
-        } catch (err) {
-          loadingBar.style.display = "none";
-          console.error("createUnityInstance failed to run:", err);
+        // wait for stream preload
+        if (USE_STREAM_ZIP && streamedZipFiles.size === 0) {
+            validationtext.innerText = "Streaming ZIP...";
+            await preloadStreamZip();
         }
-      };
-      loaderScript.onerror = (e) => {
-        console.error("Loader script failed to load:", e);
-        alert("Loader script failed to load. Check console.");
-      };
-      document.body.appendChild(loaderScript);
+
+        // Filenames Unity expects
+        const expected = {
+            data: "Game.data",
+            framework: "Game.framework.js",
+            code: "Game.wasm",
+            loader: "Game.loader.js"
+        };
+
+        // Helper to get blob URLs from streamed files
+        async function getStreamedBlobURL(filename) {
+            let key = [...streamedZipFiles.keys()].find(k => 
+                k.toLowerCase().endsWith(filename.toLowerCase()) || 
+                k.toLowerCase().includes(filename.toLowerCase())
+            );
+            if (!key) throw new Error("File not found in streamed ZIP: " + filename);
+            const blob = new Blob([streamedZipFiles.get(key)], { type: contentTypeFromFilename(key) });
+            return URL.createObjectURL(blob);
+        }
+
+        const dataUrl = await getStreamedBlobURL(expected.data);
+        const frameworkUrl = await getStreamedBlobURL(expected.framework);
+        const codeUrl = await getStreamedBlobURL(expected.code);
+        const loaderUrl = await getStreamedBlobURL(expected.loader);
+
+        const config = {
+            dataUrl,
+            frameworkUrl,
+            codeUrl,
+            streamingAssetsUrl: window.STREAMING_ASSETS_URL || "StreamingAssets",
+            companyName: "Unity",
+            productName: "WebGL Player",
+            productVersion: "1.0",
+            showBanner: (msg, type) => console.log(type, msg),
+        };
+
+        // Load loader script from blob
+        const loaderScript = document.createElement("script");
+        loaderScript.src = loaderUrl;
+        loaderScript.onload = () => {
+            try {
+                createUnityInstance(canvas, config, (progress) => {
+                    const percent = Math.round(progress * 100);
+                    progressBarFull.style.width = `${percent}%`;
+                    unityloadingtext.innerText = `${percent}%`;
+                }).then(unityInstance => {
+                    loadingBar.style.display = "none";
+                    document.getElementById("unity-fullscreen-button").onclick = () => {
+                        try { unityInstance.SetFullscreen(1); } catch(e) {}
+                    };
+                }).catch(err => {
+                    loadingBar.style.display = "none";
+                    console.error("Unity instance creation failed:", err);
+                });
+            } catch (err) {
+                loadingBar.style.display = "none";
+                console.error("createUnityInstance failed:", err);
+            }
+        };
+        loaderScript.onerror = (e) => console.error("Loader script failed to load:", e);
+        document.body.appendChild(loaderScript);
     }
+
 
     // helper: produce blob URL from zip by filename
     async function getBlobURLFromZip(zip, filename) {
@@ -753,45 +763,37 @@
 
     // Play button click flow
     playButton.addEventListener("click", async () => {
-      playButton.style.display = "none";
-      validationtext.style.display = "flex";
+        playButton.style.display = "none";
+        validationtext.style.display = "flex";
 
-      const savedPassword = localStorage.getItem("S2HACReplayVerifiedKey");
-      if (!ZIP_URL) {
-        alert("ZIP URL not provided. Add ?f=<base64-zip-url> to the page URL.");
-        playButton.style.display = "block";
-        validationtext.style.display = "none";
-        return;
-      }
+        const savedPassword = localStorage.getItem("S2HACReplayVerifiedKey");
+        if (!ZIP_URL) {
+            alert("ZIP URL not provided. Add ?f=<base64-zip-url> to the page URL.");
+            playButton.style.display = "block";
+            validationtext.style.display = "none";
+            return;
+        }
 
-      if (savedPassword) {
+        PASSWORD = savedPassword || PASSWORD;
+
         try {
-          PASSWORD = savedPassword;
-          try {
             if (VERSION_NO === "5") await startLegacyUnityV5();
             if (USE_STREAM_ZIP) {
                 validationtext.innerText = "Streaming ZIP...";
-                await preloadStreamZip();
+                await preloadStreamZip(); // <-- stream + decrypt + unzip into streamedZipFiles
                 console.log("[StreamZip] Ready for Unity fetch interception.");
             }
-
-            else await startUnity6();
-          } catch (err) {
-            alert("Failed: " + err.message);
-            console.error(err);
-          }
-        } catch (e) {
-          console.error("Error using the saved password:", e);
-          validationtext.style.display = "none";
-          passwordContainer.style.display = "flex";
-          passwordInput.focus();
+            await startUnity6(); // <-- now uses streamed files
+            localStorage.setItem("S2HACReplayVerifiedKey", PASSWORD);
+            passwordContainer.style.display = "none";
+        } catch (err) {
+            console.error("Unity start failed:", err);
+            validationtext.style.display = "none";
+            passwordContainer.style.display = "flex";
+            passwordInput.focus();
         }
-      } else {
-        validationtext.style.display = "none";
-        passwordContainer.style.display = "flex";
-        passwordInput.focus();
-      }
     });
+
 
     // Continue button - user-provided key
     continueButton.addEventListener("click", async () => {
