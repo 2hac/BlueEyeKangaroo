@@ -169,6 +169,8 @@
     let VERSION_NO = null;         // default; overwritten by input/localStorage when used
     const TARGET_FETCH_URL = "parkour"; // partial match used to intercept resources (adjust as needed)
 
+    const streamedZipFiles = new Map();
+
     // Helper: get query param f (base64)
     function getQueryParam(name) {
       const params = new URLSearchParams(window.location.search);
@@ -276,6 +278,227 @@
         ["decrypt"]
       );
     }
+
+    // Wrapper to use with streamFetchDecryptAndUnzip
+    async function loadZipStreamed(url, password) {
+      console.log("[StreamZip] Starting streamed decrypt+unzip:", url);
+
+      await streamFetchDecryptAndUnzip(url, password, (filename, chunk, final) => {
+        if (!streamedZipFiles.has(filename)) {
+          streamedZipFiles.set(filename, []);
+        }
+        streamedZipFiles.get(filename).push(chunk);
+
+        if (final) {
+          // Merge chunks into one Uint8Array
+          const chunks = streamedZipFiles.get(filename);
+          let total = 0;
+          for (const c of chunks) total += c.length;
+
+          const full = new Uint8Array(total);
+          let offset = 0;
+          for (const c of chunks) { full.set(c, offset); offset += c.length; }
+
+          streamedZipFiles.set(filename, full); // replace array-of-chunks with final data
+          console.log("[StreamZip] Finished file:", filename, "size:", full.length);
+        }
+      });
+
+      console.log("[StreamZip] Stream ZIP load complete");
+    }
+
+
+    // ============================================================================
+    // getDecryptedStreamedResource(resource)
+    // SAME API as getDecryptedResponseForResource()
+    // ============================================================================
+    async function getDecryptedStreamedResource(resource) {
+      const name = filenameFromResource(resource);
+
+      if (!streamedZipFiles.has(name)) {
+        // try case-insensitive or partial match
+        const key = [...streamedZipFiles.keys()].find(k =>
+          k.toLowerCase().endsWith(name.toLowerCase()) ||
+          k.toLowerCase().includes(name.toLowerCase())
+        );
+        if (!key) throw new Error("[StreamZip] File not found: " + name);
+        return new Response(
+          new Blob([streamedZipFiles.get(key)], { type: contentTypeFromFilename(key) })
+        );
+      }
+
+      const data = streamedZipFiles.get(name);
+      return new Response(
+        new Blob([data], { type: contentTypeFromFilename(name) })
+      );
+    }
+
+
+    // ============================================================================
+    // STREAM ZIP OVERRIDE (optional)
+    // Forces the system to use the streamed loader instead of JSZip
+    // ============================================================================
+    let USE_STREAM_ZIP = true;
+
+    // preload ZIP via streaming before Unity loads
+    async function preloadStreamZip() {
+      if (!ZIP_URL) throw new Error("ZIP_URL not set");
+      streamedZipFiles.clear();
+      await loadZipStreamed(ZIP_URL, PASSWORD);
+    }
+
+
+
+    // stream decrypt + unzip using aes-js + fflate
+    async function streamFetchDecryptAndUnzip(zipUrl, password, onFile) {
+      if (!zipUrl) throw new Error("ZIP URL not set");
+      const resp = await fetch(zipUrl);
+      if (!resp.ok) throw new Error("Failed to fetch zip: " + resp.status);
+      if (!resp.body) throw new Error("ReadableStream not supported in this browser");
+
+      // derive key/iv (same as your deriveKeyAndIV)
+      const { key: rawKey, iv: initialIV } = await deriveKeyAndIV(password);
+
+      // convert to plain Uint8Array for aes-js
+      const keyBytes = rawKey;                // Uint8Array (32)
+      const ivBytes = initialIV;              // Uint8Array (16)
+
+      // create AES-CBC block decryptor (aes-js ModeOfOperation.cbc)
+      // aes-js expects arrays of bytes (Uint8Array ok)
+      const aesCbc = new aesjs.ModeOfOperation.cbc(keyBytes, ivBytes);
+
+      // fflate streaming unzip: create Unzip instance that will call 'onFile' for each file entry
+      // onFile receives (file) where file.ondata(chunk, final) is used to stream file bytes
+      const unzip = new fflate.Unzip((entry) => {
+        // entry: {name, size, ondata}
+        // Provide a default onFile handler if not provided
+        const filename = entry.name;
+        const chunks = [];
+        entry.ondata = (chunk, final) => {
+          // chunk is Uint8Array
+          // call user callback for stream of file bytes
+          if (onFile && typeof onFile === 'function') {
+            onFile(filename, chunk, final);
+          } else {
+            // default collects into an array (careful with huge files)
+            chunks.push(chunk.slice());
+            if (final) {
+              // combine if user didn't provide their own streaming handler
+              const full = concatUint8Arrays(chunks);
+              console.log("extracted file", filename, "len=", full.length);
+            }
+          }
+        };
+      });
+
+      // helper to concat arrays (used only in fallback)
+      function concatUint8Arrays(arrs) {
+        let total = 0;
+        for (const a of arrs) total += a.length;
+        const out = new Uint8Array(total);
+        let off = 0;
+        for (const a of arrs) { out.set(a, off); off += a.length; }
+        return out;
+      }
+
+      // We'll read from resp.body.getReader() and decrypt in 16-byte blocks.
+      const reader = resp.body.getReader();
+
+      // internal buffer for ciphertext bytes we haven't processed yet
+      let ctBuf = new Uint8Array(0);
+
+      // For AES-CBC stream decryption with block cipher:
+      // - We can decrypt full 16-byte-aligned blocks with aes-js.cbc.decrypt
+      // - We must preserve the final block until we know it's the final piece (so we can remove PKCS#7 padding)
+      // Strategy:
+      // - Keep at least 16 bytes at end of ctBuf unprocessed.
+      // - When we have >= 32 bytes, decrypt up to length - 16 bytes (a multiple of 16).
+      // - When stream ends, decrypt remaining (multiple of 16 expected) and strip padding.
+
+      // helper to concat two Uint8Arrays
+      function concat(a, b) {
+        const out = new Uint8Array(a.length + b.length);
+        out.set(a, 0); out.set(b, a.length);
+        return out;
+      }
+
+      let done = false;
+      try {
+        while (!done) {
+          const { value, done: rDone } = await reader.read();
+          if (rDone) {
+            // stream ended — process remaining ciphertext
+            done = true;
+            // ctBuf may be any length; AES-CBC requires multiple of 16 for decrypt.
+            // If not aligned, that's a protocol error — but typical enc uses whole file.
+            // We'll pad zeroes if required (shouldn't be needed). Prefer to check length mod 16.
+            if (ctBuf.length === 0) {
+              // nothing left
+            } else {
+              if (ctBuf.length % 16 !== 0) {
+                // if not aligned, try to pad zeros to 16 multiple (only as fallback)
+                const padLen = 16 - (ctBuf.length % 16);
+                const tmp = new Uint8Array(ctBuf.length + padLen);
+                tmp.set(ctBuf);
+                // zeros added
+                ctBuf = tmp;
+              }
+              // decrypt ALL remaining blocks
+              const decAll = aesCbc.decrypt(ctBuf);
+              // remove PKCS#7 padding from final decrypted bytes
+              const padding = decAll[decAll.length - 1];
+              const endLen = decAll.length - padding;
+              const finalPlain = decAll.subarray(0, endLen);
+              // feed decrypted bytes to unzip (final chunk)
+              unzip.push(finalPlain, true);
+            }
+            break;
+          }
+
+          // append incoming ciphertext chunk
+          const chunk = value; // Uint8Array
+          ctBuf = concat(ctBuf, chunk);
+
+          // if we have more than 32 bytes, decrypt as many blocks as possible
+          // always leave the last 16 bytes in ctBuf unprocessed (so we can chain IV correctly)
+          while (ctBuf.length >= 32) {
+            // decrypt up to len - 16, and keep final 16 bytes in ctBuf
+            const processLen = ctBuf.length - 16; // at least 16, multiple of 1 byte; we must ensure processLen % 16 == 0
+            const procBlocks = processLen - (processLen % 16); // round down to multiple of 16
+            if (procBlocks === 0) break;
+            const toProcess = ctBuf.subarray(0, procBlocks);
+            const remaining = ctBuf.subarray(procBlocks);
+
+            // decrypt toProcess (multiple of 16)
+            const plain = aesCbc.decrypt(toProcess);
+            // push decrypted bytes (not final)
+            unzip.push(plain, false);
+
+            // keep remaining (at least 16 bytes)
+            ctBuf = new Uint8Array(remaining); // copy
+          }
+          // loop continues to collect more ciphertext data
+        }
+
+        // done reading stream: we already pushed finalPlain above and signalled final=true
+        // Now wait for unzip to finish processing entries (fflate works synchronously)
+        // nothing else to do
+      } catch (err) {
+        console.error("stream decrypt/unzip failed", err);
+        throw err;
+      } finally {
+        // explicit cleanup of sensitive material
+        // overwrite key material if possible
+        if (keyBytes && keyBytes.fill) keyBytes.fill(0);
+        if (ivBytes && ivBytes.fill) ivBytes.fill(0);
+        ctBuf = null;
+      }
+
+      // unzip pushes file entry callbacks which you handle in onFile
+      // fflate processes synchronously as data is pushed, so once this function returns,
+      // unzip has already invoked entry.ondata for each file chunk.
+    }
+
 
     // Fetch & decrypt zip (returns JSZip instance)
     async function fetchAndDecryptZipFromUrl(zipUrl, password) {
@@ -396,7 +619,12 @@
         if (shouldIntercept && ZIP_URL) {
           console.log("[Interceptor] Serving from decrypted zip:", resourceStr);
           try {
-            return await getDecryptedResponseForResource(resourceStr, PASSWORD);
+            // return await getDecryptedResponseForResource(resourceStr, PASSWORD);
+            if (USE_STREAM_ZIP && streamedZipFiles.size > 0) {
+                return await getDecryptedStreamedResource(resourceStr);
+            } else {
+                return await getDecryptedResponseForResource(resourceStr, PASSWORD);
+            }
           } catch (err) {
             console.warn("[Interceptor] Decrypted response failed, falling back to network:", err);
             // fall through to normal fetch
@@ -536,6 +764,12 @@
           PASSWORD = savedPassword;
           try {
             if (VERSION_NO === "5") await startLegacyUnityV5();
+            if (USE_STREAM_ZIP) {
+                validationtext.innerText = "Streaming ZIP...";
+                await preloadStreamZip();
+                console.log("[StreamZip] Ready for Unity fetch interception.");
+            }
+
             else await startUnity6();
           } catch (err) {
             alert("Failed: " + err.message);
@@ -577,6 +811,11 @@
       try {
         try {
           if (VERSION_NO === "5") await startLegacyUnityV5();
+          if (USE_STREAM_ZIP) {
+              validationtext.innerText = "Streaming ZIP...";
+              await preloadStreamZip();
+              console.log("[StreamZip] Ready for Unity fetch interception.");
+          }
           else await startUnity6();
         } catch (err) {
           alert("Failed: " + err.message);
