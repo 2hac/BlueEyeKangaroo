@@ -599,6 +599,8 @@
         loaderScript.onload = () => {
             createUnityInstance(canvas, config, (progress) => {
                 progressBarFull.style.width = `${Math.round(progress * 100)}%`;
+                
+                loadingBar.style.display = "none";
             });
         };
 
