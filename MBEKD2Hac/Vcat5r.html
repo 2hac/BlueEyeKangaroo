@@ -497,103 +497,83 @@
 
     // Helper to create Unity instance by providing blob URLs for loader/framework/data/wasm
     async function startUnity6() {
-      if (!ZIP_URL) throw new Error("ZIP_URL not provided. Add ?f=<base64-encoded-zip-url> to the URL.");
-      let zip = null;
-      // fetch & decrypt zip once, will populate cachedZip
-      // --- CHECK IF VERSION STORE ALREADY HAS THESE FILES ---
-      const expected = {
-          data: "Game.data",
-          framework: "Game.framework.js",
-          code: "Game.wasm",
-          loader: "Game.loader.js"
-      };
+        if (!ZIP_URL) throw new Error("ZIP_URL not provided.");
 
-      const allExist = await Promise.all([
-          storeExistsAndHasFile(expected.data),
-          storeExistsAndHasFile(expected.framework),
-          storeExistsAndHasFile(expected.code),
-          storeExistsAndHasFile(expected.loader)
-      ]);
+        const expected = {
+            data: "Game.data",
+            framework: "Game.framework.js",
+            code: "Game.wasm",
+            loader: "Game.loader.js",
+        };
 
-      // If ALL files exist → skip fetching ZIP entirely
-      if (allExist.every(Boolean)) {
-          console.log("[CACHE] All versioned files found in store:", STORE_NAME);
-          cachedZip = null; // we are not using the zip at all
-      } else {
-          console.log("[CACHE] Missing files, decrypting ZIP...");
-          cachedZip = await fetchAndDecryptZipFromUrl(ZIP_URL, PASSWORD);
-          zip = cachedZip; // ← FIX: now zip is not null
+        let zip = null;
 
-          // Save missing ones
-          for (const key in expected) {
-              const fn = expected[key];
+        // 1. Try reading everything from IndexedDB first
+        const stored = {};
+        let allFound = true;
 
-              const fileObj = zip.file(fn);
-              if (!fileObj) {
-                  console.error("[ZIP ERROR] Missing file:", fn);
-                  throw new Error("ZIP missing required file: " + fn);
-              }
-
-              const blob = await fileObj.async("blob");
-              await saveFileToDB(fn, blob);
-              console.log("[DB] Saved:", fn);
-          }
-      }
-
-
-
-      // hide play UI and show unity container
-      playContainer.style.display = "none";
-      unityContainer.style.display = "block";
-      loadingBar.style.display = "block";
-      
-      // Build blob URLs
-      const dataUrl = await getBlobURLFromZip(zip, expected.data);
-      const frameworkUrl = await getBlobURLFromZip(zip, expected.framework);
-      const codeUrl = await getBlobURLFromZip(zip, expected.code);
-      const loaderUrl = await getBlobURLFromZip(zip, expected.loader);
-
-      const config = {
-        dataUrl,
-        frameworkUrl,
-        codeUrl,
-        streamingAssetsUrl: window.STREAMING_ASSETS_URL || "StreamingAssets",
-        companyName: "Unity",
-        productName: "WebGL Player",
-        productVersion: "1.0",
-        showBanner: (msg, type) => console.log(type, msg),
-      };
-
-      // load loader script from blob and start unity
-      const loaderScript = document.createElement("script");
-      loaderScript.src = loaderUrl;
-      loaderScript.onload = () => {
-        // createUnityInstance provided by loader script
-        try {
-          createUnityInstance(canvas, config, (progress) => {
-            const percent = Math.round(progress * 100);
-            progressBarFull.style.width = `${percent}%`;
-            document.getElementById("unity-loading-text").innerText = `${percent}%`;
-          }).then((unityInstance) => {
-            loadingBar.style.display = "none";
-            document.getElementById("unity-fullscreen-button").onclick = () => {
-              try { unityInstance.SetFullscreen(1); } catch(e) { console.warn("Fullscreen call failed", e); }
-            };
-          }).catch((err) => {
-            loadingBar.style.display = "none";
-            alert("Unity error: " + err);
-          });
-        } catch (err) {
-          loadingBar.style.display = "none";
-          console.error("createUnityInstance failed to run:", err);
+        for (const key in expected) {
+            const fn = expected[key];
+            stored[key] = await getFileFromDB(fn);
+            if (!stored[key]) allFound = false;
         }
-      };
-      loaderScript.onerror = (e) => {
-        console.error("Loader script failed to load:", e);
-        alert("Loader script failed to load. Check console.");
-      };
-      document.body.appendChild(loaderScript);
+
+        // 2. If ALL files were in DB → no ZIP needed
+        if (allFound) {
+            console.log("[CACHE] Loaded all files from DB.");
+        } else {
+            console.log("[CACHE] DB missing files → loading ZIP...");
+
+            zip = await fetchAndDecryptZipFromUrl(ZIP_URL, PASSWORD);
+
+            for (const key in expected) {
+                const fn = expected[key];
+
+                const fileObj = zip.file(fn);
+                if (!fileObj) throw new Error("ZIP missing file: " + fn);
+
+                const blob = await fileObj.async("blob");
+                stored[key] = blob;
+
+                await saveFileToDB(fn, blob);
+                console.log("[DB] Saved:", fn);
+            }
+        }
+
+        // 3. Build blob URLs from stored data
+        const dataUrl = URL.createObjectURL(stored.data);
+        const frameworkUrl = URL.createObjectURL(stored.framework);
+        const codeUrl = URL.createObjectURL(stored.code);
+        const loaderUrl = URL.createObjectURL(stored.loader);
+
+        playContainer.style.display = "none";
+        unityContainer.style.display = "block";
+        loadingBar.style.display = "block";
+
+        const config = {
+            dataUrl,
+            frameworkUrl,
+            codeUrl,
+            streamingAssetsUrl: window.STREAMING_ASSETS_URL || "StreamingAssets",
+            companyName: "Unity",
+            productName: "WebGL Player",
+            productVersion: "1.0",
+            showBanner: (msg, type) => console.log(type, msg),
+        };
+
+        const loaderScript = document.createElement("script");
+        loaderScript.src = loaderUrl;
+
+        loaderScript.onload = () => {
+            createUnityInstance(canvas, config, (progress) => {
+                progressBarFull.style.width = `${Math.round(progress * 100)}%`;
+            });
+        };
+
+        loaderScript.onerror = () => alert("Loader script failed to load.");
+        document.body.appendChild(loaderScript);
     }
+
 
     // helper: produce blob URL from zip by filename
     async function getBlobURLFromZip(zip, filename) {
