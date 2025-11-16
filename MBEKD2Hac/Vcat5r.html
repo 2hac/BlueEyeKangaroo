@@ -522,16 +522,24 @@
       } else {
           console.log("[CACHE] Missing files, decrypting ZIP...");
           cachedZip = await fetchAndDecryptZipFromUrl(ZIP_URL, PASSWORD);
-
+          zip = cachedZip; // ← FIX: now zip is not null
 
           // Save missing ones
           for (const key in expected) {
               const fn = expected[key];
-              const blob = await zip.file(fn).async("blob");
+
+              const fileObj = zip.file(fn);
+              if (!fileObj) {
+                  console.error("[ZIP ERROR] Missing file:", fn);
+                  throw new Error("ZIP missing required file: " + fn);
+              }
+
+              const blob = await fileObj.async("blob");
               await saveFileToDB(fn, blob);
               console.log("[DB] Saved:", fn);
           }
       }
+
 
 
       // hide play UI and show unity container
