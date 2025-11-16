@@ -168,6 +168,9 @@
     let PASSWORD = "12345";         // default; overwritten by input/localStorage when used
     let VERSION_NO = null;         // default; overwritten by input/localStorage when used
     const TARGET_FETCH_URL = "parkour"; // partial match used to intercept resources (adjust as needed)
+    const DB_NAME = "UnityCacheDB";
+    const STORE_NAME = "DFiles";
+
 
     // Helper: get query param f (base64)
     function getQueryParam(name) {
@@ -304,6 +307,42 @@
       }
     }
 
+    function openDb() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, 1);
+        request.onupgradeneeded = e => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME);
+          }
+        };
+        request.onsuccess = e => resolve(e.target.result);
+        request.onerror = e => reject(e.target.error);
+      });
+    }
+
+    async function getCachedFile(key) {
+      const db = await openDb();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readonly");
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.get(key);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function setCachedFile(key, blob) {
+      const db = await openDb();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readwrite");
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.put(blob, key);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    }
+
     // utility: content-type from filename ext
     function contentTypeFromFilename(name) {
       const ext = name.split('.').pop().toLowerCase();
@@ -339,28 +378,35 @@
     // Return a Response object containing the requested file from the zip
     async function getDecryptedResponseForResource(resource, password) {
       if (!ZIP_URL) throw new Error("ZIP_URL is not provided (param ?f missing?)");
-      // load zip once per session (with provided password)
-      if (!cachedZip) {
-        cachedZip = await fetchAndDecryptZipFromUrl(ZIP_URL, password);
-      }
 
-      // Determine filename requested
       const filename = filenameFromResource(resource);
+      const cacheKey = `${ZIP_URL}|${password}|${filename}`;
 
-      // If the Unity loader expects different names, you might need to map them here
-      const file = cachedZip.file(filename);
-      if (!file) {
-        // try case-insensitive match or substring
-        const maybe = cachedZip.file(Object.keys(cachedZip.files).find(k => k.toLowerCase().endsWith(filename.toLowerCase())));
-        if (maybe) {
-          const blob = await maybe.async("blob");
-          return new Response(blob, { headers: { 'Content-Type': contentTypeFromFilename(maybe.name) } });
-        }
-        throw new Error(`File ${filename} not found inside zip`);
+      // Try IndexedDB first
+      const cachedBlob = await getCachedFile(cacheKey);
+      if (cachedBlob) {
+        console.log("[Cache] Serving", filename, "from IndexedDB");
+        return new Response(cachedBlob, { headers: { 'Content-Type': contentTypeFromFilename(filename) } });
       }
+
+      // If not in cache, fetch & decrypt ZIP
+      if (!cachedZip) cachedZip = await fetchAndDecryptZipFromUrl(ZIP_URL, password);
+
+      let file = cachedZip.file(filename);
+      if (!file) {
+        const maybe = cachedZip.file(Object.keys(cachedZip.files).find(k => k.toLowerCase().endsWith(filename.toLowerCase())));
+        if (maybe) file = maybe;
+      }
+      if (!file) throw new Error(`File ${filename} not found inside zip`);
+
       const blob = await file.async("blob");
+
+      // store in IndexedDB for next time
+      setCachedFile(cacheKey, blob).catch(e => console.warn("Failed to cache file:", e));
+
       return new Response(blob, { headers: { 'Content-Type': contentTypeFromFilename(filename) } });
     }
+
 
     // Intercept fetch to serve files out of the decrypted zip when matched
     const originalFetch = window.fetch.bind(window);
