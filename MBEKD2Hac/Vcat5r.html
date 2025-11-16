@@ -505,8 +505,8 @@
           cachedZip = null; // we are not using the zip at all
       } else {
           console.log("[CACHE] Missing files, decrypting ZIP...");
-          const zip = await fetchAndDecryptZipFromUrl(ZIP_URL, PASSWORD);
-          cachedZip = zip;
+          cachedZip = await fetchAndDecryptZipFromUrl(ZIP_URL, PASSWORD);
+
 
           // Save missing ones
           for (const key in expected) {
