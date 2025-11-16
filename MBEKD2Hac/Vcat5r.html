@@ -525,6 +525,7 @@
             console.log("[CACHE] DB missing files → loading ZIP...");
 
             zip = await fetchAndDecryptZipFromUrl(ZIP_URL, PASSWORD);
+            console.log("ZIP FILES:", Object.keys(zip.files));
 
             for (const key in expected) {
                 const fn = expected[key];
