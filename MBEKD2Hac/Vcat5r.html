@@ -167,9 +167,6 @@
     let ZIP_URL = null;                // <-- will be set from ?f=BASE64
     let PASSWORD = "12345";         // default; overwritten by input/localStorage when used
     let VERSION_NO = null;         // default; overwritten by input/localStorage when used
-    let CACHE_ID = null;
-    let CACHE_VERSION = null;
-    let CACHE_KEY = null;
     const TARGET_FETCH_URL = "parkour"; // partial match used to intercept resources (adjust as needed)
 
     // Helper: get query param f (base64)
@@ -194,137 +191,6 @@
         try { return atob(b64); } catch (e2) { return null; }
       }
     }
-
-    (function initCacheParam() {
-        const cParam = getQueryParam("c");
-        if (!cParam) return;
-
-        const decoded = base64DecodeToString(cParam);
-        if (!decoded) return;
-
-        const parts = decoded.split("_");
-        if (parts.length !== 2) return;
-
-        CACHE_ID = parts[0];
-        CACHE_VERSION = parts[1];
-
-        console.log("[Cache] Cache enabled:", CACHE_ID, CACHE_VERSION);
-    })();
-
-    // IndexedDB wrapper
-    const DB_NAME = "UnityZipCacheDB";
-    let dbPromise = null;
-
-    function openDB() {
-        if (dbPromise) return dbPromise;
-
-        dbPromise = new Promise((resolve, reject) => {
-            const req = indexedDB.open(DB_NAME, 1);
-
-            req.onupgradeneeded = e => {
-                const db = e.target.result;
-                if (!db.objectStoreNames.contains("files")) {
-                    db.createObjectStore("files", { keyPath: "key" });
-                }
-            };
-
-            req.onsuccess = e => resolve(e.target.result);
-            req.onerror = e => reject(e.target.error);
-        });
-
-        return dbPromise;
-    }
-
-    async function cachePut(fileKey, blob) {
-        if (!CACHE_ID) return;
-
-        const db = await openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction("files", "readwrite");
-            tx.objectStore("files").put({
-                key: `${CACHE_ID}_${CACHE_VERSION}_${fileKey}`,
-                blob
-            });
-            tx.oncomplete = resolve;
-            tx.onerror = reject;
-        });
-    }
-
-    async function cacheGet(fileKey) {
-        if (!CACHE_ID) return null;
-
-        const db = await openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction("files", "readonly");
-            const req = tx.objectStore("files").get(`${CACHE_ID}_${CACHE_VERSION}_${fileKey}`);
-            req.onsuccess = () => resolve(req.result ? req.result.blob : null);
-            req.onerror = reject;
-        });
-    }
-
-    // removes old versions of same cache ID
-    async function purgeOldVersions() {
-        if (!CACHE_ID) return;
-        const db = await openDB();
-
-        return new Promise((resolve) => {
-            const tx = db.transaction("files", "readwrite");
-            const store = tx.objectStore("files");
-            const req = store.getAllKeys();
-
-            req.onsuccess = () => {
-                req.result.forEach(key => {
-                    if (key.startsWith(CACHE_ID + "_") && !key.includes("_" + CACHE_VERSION + "_")) {
-                        store.delete(key);
-                        console.log("[Cache] Removed old version:", key);
-                    }
-                });
-                resolve();
-            };
-        });
-    }
-
-    // IndexedDB wrapper
-    const DB_STORE = "files";
-
-    function openDB() {
-        if (!dbPromise) {
-            dbPromise = new Promise((resolve, reject) => {
-                const req = indexedDB.open(DB_NAME, 1);
-                req.onupgradeneeded = (e) => {
-                    const db = e.target.result;
-                    if (!db.objectStoreNames.contains(DB_STORE)) {
-                        db.createObjectStore(DB_STORE);
-                    }
-                };
-                req.onsuccess = () => resolve(req.result);
-                req.onerror = () => reject(req.error);
-            });
-        }
-        return dbPromise;
-    }
-
-    async function dbSet(key, value) {
-        const db = await openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(DB_STORE, "readwrite");
-            tx.objectStore(DB_STORE).put(value, key);
-            tx.oncomplete = resolve;
-            tx.onerror = () => reject(tx.error);
-        });
-    }
-
-    async function dbGet(key) {
-        const db = await openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(DB_STORE, "readonly");
-            const req = tx.objectStore(DB_STORE).get(key);
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-        });
-    }
-
-
 
     // On load: read ZIP URL from ?f=<base64>
     // On load: read ZIP URL and StreamingAssets URL from ?f and ?s
@@ -437,43 +303,6 @@
         throw err;
       }
     }
-
-
-    async function loadZipWithCache(zipUrl, version) {
-        const CACHE_KEY = "unityFiles_" + version;
-
-        let cached = await dbGet(CACHE_KEY);
-        if (cached) {
-            console.log("[DB Cache] Loaded decrypted files from DB.");
-            return cached; // { "file1": Uint8Array, ... }
-        }
-
-        console.log("[DB Cache] No cache found. Downloading ZIP...");
-
-        const zipResp = await fetch(zipUrl);
-        const zipBuf = await zipResp.arrayBuffer();
-        const zip = await JSZip.loadAsync(zipBuf);
-
-        console.log("[DB Cache] ZIP downloaded. Decrypting...");
-
-        const output = {};
-
-        // Decrypt every file
-        for (const name of Object.keys(zip.files)) {
-            const file = zip.files[name];
-            if (!file.dir) {
-                const raw = await file.async("uint8array");
-                const dec = await decryptStream(raw); // <--- your decrypt function
-                output[name] = dec;
-            }
-        }
-
-        console.log("[DB Cache] Storing decrypted files in IndexedDB...");
-        await dbSet(CACHE_KEY, output);
-
-        return output;
-    }
-
 
     // utility: content-type from filename ext
     function contentTypeFromFilename(name) {
@@ -588,7 +417,7 @@
     async function startUnity6() {
       if (!ZIP_URL) throw new Error("ZIP_URL not provided. Add ?f=<base64-encoded-zip-url> to the URL.");
       // fetch & decrypt zip once, will populate cachedZip
-      const zip = await loadZipWithCache(ZIP_URL, PASSWORD);
+      const zip = await fetchAndDecryptZipFromUrl(ZIP_URL, PASSWORD);
       cachedZip = zip; // cache it
 
       // hide play UI and show unity container
@@ -605,32 +434,10 @@
       };
 
       // Build blob URLs
-      async function loadOrCache(name, filename) {
-          // 1. Try cache
-          const cachedBlob = await cacheGet(name);
-          if (cachedBlob) {
-              console.log("[Cache] Loaded from cache:", name);
-              return URL.createObjectURL(cachedBlob);
-          }
-
-          // 2. Load from zip
-          const blob = await zip.file(filename).async("blob");
-
-          // 3. Save to cache
-          await cachePut(name, blob);
-
-          console.log("[Cache] Stored:", name);
-
-          return URL.createObjectURL(blob);
-      }
-
-      await purgeOldVersions(); // cleanup old version files
-
-      const dataUrl = await loadOrCache("data", expected.data);
-      const frameworkUrl = await loadOrCache("framework", expected.framework);
-      const codeUrl = await loadOrCache("code", expected.code);
-      const loaderUrl = await loadOrCache("loader", expected.loader);
-
+      const dataUrl = await getBlobURLFromZip(zip, expected.data);
+      const frameworkUrl = await getBlobURLFromZip(zip, expected.framework);
+      const codeUrl = await getBlobURLFromZip(zip, expected.code);
+      const loaderUrl = await getBlobURLFromZip(zip, expected.loader);
 
       const config = {
         dataUrl,
@@ -775,7 +582,7 @@
 
       try {
         // Fetch and decrypt the ZIP
-        const zip = await loadZipWithCache(ZIP_URL, PASSWORD);
+        const zip = await fetchAndDecryptZipFromUrl(ZIP_URL, PASSWORD);
         cachedZip = zip;
 
         
