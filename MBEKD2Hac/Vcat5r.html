@@ -282,6 +282,32 @@
       }
     }
 
+    function getFileFromDB(key) {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open("UnityCacheDB", 1);
+
+            request.onerror = () => reject("IndexedDB open error");
+
+            request.onsuccess = event => {
+                const db = event.target.result;
+                const tx = db.transaction("files", "readonly");
+                const store = tx.objectStore("files");
+                const getReq = store.get(key);
+
+                getReq.onerror = () => reject("Failed to get file");
+                getReq.onsuccess = () => resolve(getReq.result);
+
+                tx.oncomplete = () => db.close();
+            };
+
+            request.onupgradeneeded = event => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains("files"))
+                    db.createObjectStore("files");
+            };
+        });
+    }
+
     // On load: read ZIP URL from ?f=<base64>
     // On load: read ZIP URL and StreamingAssets URL from ?f and ?s
     (function initParams() {
