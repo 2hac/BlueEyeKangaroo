@@ -171,6 +171,8 @@
     const TARGET_FETCH_URL = "parkour"; // partial match used to intercept resources (adjust as needed)
     const DB_NAME = "UnityDeCache";
     const DB_VERSION = 1;
+    let INTERCEPTION_ENABLED = false;
+
 
     // STORE NAME NOW COMES FROM ?d=
     let STORE_NAME = null;
@@ -501,25 +503,28 @@
     const originalFetch = window.fetch.bind(window);
     window.fetch = async function(resource, init) {
       try {
-        // only intercept if resource string contains TARGET_FETCH_URL or if the filename is one of Unity build files
-        const resourceStr = (typeof resource === "string") ? resource : (resource && resource.url) ? resource.url : '';
-        const shouldIntercept = resourceStr.includes(TARGET_FETCH_URL) ||
-                                /Game|Game|Game\.data|Game\.framework\.js|Game\.wasm|\.loader\.js|\.framework\.js|\.wasm|\.data$/i.test(resourceStr);
+        if (!INTERCEPTION_ENABLED) {
+          return originalFetch(resource, init);
+        }
+
+        const resourceStr = typeof resource === "string"
+            ? resource
+            : resource?.url || '';
+
+        const shouldIntercept =
+          resourceStr.includes(TARGET_FETCH_URL) ||
+          /Game\.data|Game\.framework\.js|Game\.wasm|Game\.loader\.js|\.unityweb$/i.test(resourceStr);
 
         if (shouldIntercept && ZIP_URL) {
-          console.log("[Interceptor] Serving from decrypted zip:", resourceStr);
-          try {
-            return await getDecryptedResponseForResource(resourceStr, PASSWORD);
-          } catch (err) {
-            console.warn("[Interceptor] Decrypted response failed, falling back to network:", err);
-            // fall through to normal fetch
-          }
+          return await getDecryptedResponseForResource(resourceStr, PASSWORD);
         }
       } catch (e) {
         console.error("Fetch interceptor error:", e);
       }
+
       return originalFetch(resource, init);
     };
+
 
     // Helper to create Unity instance by providing blob URLs for loader/framework/data/wasm
     async function startUnity6() {
