@@ -183,21 +183,36 @@
         req.onupgradeneeded = (event) => {
           const db = event.target.result;
 
-          // Create store for the version if missing
           if (!db.objectStoreNames.contains(STORE_NAME)) {
-            console.log("[DB] Creating version store:", STORE_NAME);
+            console.log("[DB] Creating store:", STORE_NAME);
             db.createObjectStore(STORE_NAME);
           }
         };
 
         req.onsuccess = (evt) => {
-          const db = evt.target.result;
+          let db = evt.target.result;
 
-          // If store missing (DB already existed), create it now
+          // If store missing → MUST delete DB and recreate it
           if (!db.objectStoreNames.contains(STORE_NAME)) {
-            const tx = db.transaction([], "versionchange");
-            db.createObjectStore(STORE_NAME);
-            console.log("[DB] Added missing store:", STORE_NAME);
+            console.warn("[DB] Store missing, recreating DB:", STORE_NAME);
+
+            db.close();
+            const del = indexedDB.deleteDatabase(DB_NAME);
+
+            del.onsuccess = () => {
+              const req2 = indexedDB.open(DB_NAME, DB_VERSION);
+
+              req2.onupgradeneeded = (e2) => {
+                const db2 = e2.target.result;
+                db2.createObjectStore(STORE_NAME);
+              };
+
+              req2.onsuccess = (e2) => resolve(e2.target.result);
+              req2.onerror = () => reject(req2.error);
+            };
+
+            del.onerror = () => reject(del.error);
+            return;
           }
 
           resolve(db);
@@ -206,6 +221,7 @@
         req.onerror = () => reject(req.error);
       });
     }
+
     
 
     async function storeExistsAndHasFile(name) {
